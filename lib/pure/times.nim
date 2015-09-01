@@ -46,6 +46,40 @@ type
   WeekDay* = enum ## represents a weekday
     dMon, dTue, dWed, dThu, dFri, dSat, dSun
 
+type
+  TimeInfo* = object of RootObj ## represents a time in different parts
+    second*: range[0..61]     ## The number of seconds after the minute,
+                              ## normally in the range 0 to 59, but can
+                              ## be up to 61 to allow for leap seconds.
+    minute*: range[0..59]     ## The number of minutes after the hour,
+                              ## in the range 0 to 59.
+    hour*: range[0..23]       ## The number of hours past midnight,
+                              ## in the range 0 to 23.
+    monthday*: range[1..31]   ## The day of the month, in the range 1 to 31.
+    month*: Month             ## The current month.
+    year*: int                ## The current year.
+    weekday*: WeekDay         ## The current day of the week.
+    yearday*: range[0..365]   ## The number of days since January 1,
+                              ## in the range 0 to 365.
+                              ## Always 0 if the target is JS.
+    isDST*: bool              ## Determines whether DST is in effect. Always
+                              ## ``False`` if time is UTC.
+    tzname*: string           ## The timezone this time is in. E.g. GMT
+    timezone*: int            ## The offset of the (non-DST) timezone in seconds
+                              ## west of UTC.
+
+  ## I make some assumptions about the data in here. Either
+  ## everything should be positive or everything negative. Zero is
+  ## fine too. Mixed signs will lead to unexpected results.
+  TimeInterval* = object ## a time interval
+    milliseconds*: int ## The number of milliseconds
+    seconds*: int     ## The number of seconds
+    minutes*: int     ## The number of minutes
+    hours*: int       ## The number of hours
+    days*: int        ## The number of days
+    months*: int      ## The number of months
+    years*: int       ## The number of years
+
 when defined(posix) and not defined(JS):
   type
     TimeImpl {.importc: "time_t", header: "<time.h>".} = int
@@ -91,6 +125,14 @@ elif defined(windows):
   type
     Time* = distinct TimeImpl
 
+elif defined(genode):
+  type
+    TimeImpl {.importc: "time_t", header: "<time.h>".} = int
+    Time* = distinct TimeImpl ## distinct type that represents a time
+                              ## measured as number of seconds since the epoch
+  import rtc, timer
+  const tzname = "unknown"
+  var timezone: int
 
 elif defined(JS):
   type
@@ -133,40 +175,6 @@ elif defined(JS):
       setYear: proc (x: int) {.tags: [], raises: [], benign.}
       toGMTString: proc (): cstring {.tags: [], raises: [], benign.}
       toLocaleString: proc (): cstring {.tags: [], raises: [], benign.}
-
-type
-  TimeInfo* = object of RootObj ## represents a time in different parts
-    second*: range[0..61]     ## The number of seconds after the minute,
-                              ## normally in the range 0 to 59, but can
-                              ## be up to 61 to allow for leap seconds.
-    minute*: range[0..59]     ## The number of minutes after the hour,
-                              ## in the range 0 to 59.
-    hour*: range[0..23]       ## The number of hours past midnight,
-                              ## in the range 0 to 23.
-    monthday*: range[1..31]   ## The day of the month, in the range 1 to 31.
-    month*: Month             ## The current month.
-    year*: int                ## The current year.
-    weekday*: WeekDay         ## The current day of the week.
-    yearday*: range[0..365]   ## The number of days since January 1,
-                              ## in the range 0 to 365.
-                              ## Always 0 if the target is JS.
-    isDST*: bool              ## Determines whether DST is in effect. Always
-                              ## ``False`` if time is UTC.
-    tzname*: string           ## The timezone this time is in. E.g. GMT
-    timezone*: int            ## The offset of the (non-DST) timezone in seconds
-                              ## west of UTC.
-
-  ## I make some assumptions about the data in here. Either
-  ## everything should be positive or everything negative. Zero is
-  ## fine too. Mixed signs will lead to unexpected results.
-  TimeInterval* = object ## a time interval
-    milliseconds*: int ## The number of milliseconds
-    seconds*: int     ## The number of seconds
-    minutes*: int     ## The number of minutes
-    hours*: int       ## The number of hours
-    days*: int        ## The number of days
-    months*: int      ## The number of months
-    years*: int       ## The number of years
 
 {.deprecated: [TMonth: Month, TWeekDay: WeekDay, TTime: Time,
     TTimeInterval: TimeInterval, TTimeInfo: TimeInfo].}
@@ -497,7 +505,13 @@ when not defined(JS):
       result = a.tv_sec * 1000'i64 + a.tv_usec div 1000'i64
       #echo "result: ", result
 
-  proc getTime(): Time = return timec(nil)
+  proc getTime(): Time =
+    when defined(genode):
+      var r: rtc.Connection
+      r.currentTime()
+    else:
+      timec(nil)
+
   proc getLocalTime(t: Time): TimeInfo =
     var a = t
     let lt = localtime(addr(a))
@@ -547,7 +561,8 @@ when not defined(JS):
     result = Time((t - epochDiff) div rateDiff)
 
   proc getTzname(): tuple[nonDST, DST: string] =
-    return ($tzname[0], $tzname[1])
+    when defined(genode): (tzname, tzname)
+    else: ($tzname[0], $tzname[1])
 
   proc getTimezone(): int =
     return timezone
@@ -569,11 +584,17 @@ when not defined(JS):
         var secs = i64 div rateDiff
         var subsecs = i64 mod rateDiff
         result = toFloat(int(secs)) + toFloat(int(subsecs)) * 0.0000001
+      elif defined(genode):
+        var r: rtc.Connection
+        r.currentTime()
       else:
         {.error: "unknown OS".}
 
     proc cpuTime(): float =
-      result = toFloat(int(getClock())) / toFloat(clocksPerSec)
+      when defined(genode):
+        float(timer.global.elapsed_ms) / 1000.0
+      else:
+        toFloat(int(getClock())) / toFloat(clocksPerSec)
 
 elif defined(JS):
   proc newDate(): Time {.importc: "new Date".}

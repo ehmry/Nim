@@ -23,6 +23,8 @@ when defined(windows):
   import winlean
 elif defined(posix):
   import posix
+elif defined(genode):
+  import rtc, timer
 else:
   {.error: "OS module not ported to your operating system!".}
 
@@ -36,6 +38,8 @@ when defined(posix):
   else:
     var
       pathMax {.importc: "PATH_MAX", header: "<stdlib.h>".}: cint
+elif defined(genode):
+    const pathMax = 512 # see genode/repos/os/include/vfs/types.h
 
 proc osErrorMsg*(): string {.rtl, extern: "nos$1", deprecated.} =
   ## Retrieves the operating system's error flag, ``errno``.
@@ -192,6 +196,8 @@ proc existsFile*(filename: string): bool {.rtl, extern: "nos$1",
       var a = getFileAttributesA(filename)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_DIRECTORY) == 0'i32
+  when defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     var res: Stat
     return stat(filename, res) >= 0'i32 and S_ISREG(res.st_mode)
@@ -206,6 +212,8 @@ proc existsDir*(dir: string): bool {.rtl, extern: "nos$1", tags: [ReadDirEffect]
       var a = getFileAttributesA(dir)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_DIRECTORY) != 0'i32
+  when defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     var res: Stat
     return stat(dir, res) >= 0'i32 and S_ISDIR(res.st_mode)
@@ -221,6 +229,8 @@ proc symlinkExists*(link: string): bool {.rtl, extern: "nos$1",
       var a = getFileAttributesA(link)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32
+  when defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     var res: Stat
     return lstat(link, res) >= 0'i32 and S_ISLNK(res.st_mode)
@@ -239,6 +249,8 @@ proc getLastModificationTime*(file: string): Time {.rtl, extern: "nos$1".} =
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError())
     return res.st_mtime
+  elif defined(genode):
+    raiseOSError("Genode VFS does not support modification times")
   else:
     var f: WIN32_FIND_DATA
     var h = findFirstFile(file, f)
@@ -252,6 +264,8 @@ proc getLastAccessTime*(file: string): Time {.rtl, extern: "nos$1".} =
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError())
     return res.st_atime
+  elif defined(genode):
+    raiseOSError("Genode VFS does not support access times")
   else:
     var f: WIN32_FIND_DATA
     var h = findFirstFile(file, f)
@@ -269,6 +283,8 @@ proc getCreationTime*(file: string): Time {.rtl, extern: "nos$1".} =
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError())
     return res.st_ctime
+  elif defined(genode):
+    raiseOSError("Genode VFS does not support creation times")
   else:
     var f: WIN32_FIND_DATA
     var h = findFirstFile(file, f)
@@ -299,6 +315,9 @@ proc getCurrentDir*(): string {.rtl, extern: "nos$1", tags: [].} =
       var L = getCurrentDirectoryA(bufsize, result)
       if L == 0'i32: raiseOSError(osLastError())
       setLen(result, L)
+  elif defined(genode):
+    # Not supported at the VFS layer.
+    return "/"
   else:
     result = newString(bufsize)
     if getcwd(result, bufsize) != nil:
@@ -315,6 +334,8 @@ proc setCurrentDir*(newDir: string) {.inline, tags: [].} =
         raiseOSError(osLastError())
     else:
       if setCurrentDirectoryA(newDir) == 0'i32: raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("current directory not supported on Genode")
   else:
     if chdir(newDir) != 0'i32: raiseOSError(osLastError())
 
@@ -336,6 +357,9 @@ proc expandFilename*(filename: string): string {.rtl, extern: "nos$1",
       var L = getFullPathNameA(filename, bufsize, result, unused)
       if L <= 0'i32 or L >= bufsize: raiseOSError(osLastError())
       setLen(result, L)
+  elif defined(genode):
+    if filename[0] == '/': result = filename
+    else: raiseOSError("current directory not supported on Genode")
   else:
     # careful, realpath needs to take an allocated buffer according to Posix:
     result = newString(pathMax)
@@ -395,6 +419,8 @@ proc sameFile*(path1, path2: string): bool {.rtl, extern: "nos$1",
     discard closeHandle(f2)
 
     if not success: raiseOSError(lastErr)
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     var a, b: Stat
     if stat(path1, a) < 0'i32 or stat(path2, b) < 0'i32:
@@ -467,6 +493,8 @@ proc getFilePermissions*(filename: string): set[FilePermission] {.
     if (a.st_mode and S_IROTH) != 0'i32: result.incl(fpOthersRead)
     if (a.st_mode and S_IWOTH) != 0'i32: result.incl(fpOthersWrite)
     if (a.st_mode and S_IXOTH) != 0'i32: result.incl(fpOthersExec)
+  elif defined(genode):
+    raiseOSError("VFS does not support file system permissions")
   else:
     when useWinUnicode:
       wrapUnary(res, getFileAttributesW, filename)
@@ -499,6 +527,8 @@ proc setFilePermissions*(filename: string, permissions: set[FilePermission]) {.
     if fpOthersExec in permissions: p = p or S_IXOTH
 
     if chmod(filename, p) != 0: raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS does not support file system permissions")
   else:
     when useWinUnicode:
       wrapUnary(res, getFileAttributesW, filename)
@@ -534,6 +564,8 @@ proc copyFile*(source, dest: string) {.rtl, extern: "nos$1",
       if copyFileW(s, d, 0'i32) == 0'i32: raiseOSError(osLastError())
     else:
       if copyFileA(source, dest, 0'i32) == 0'i32: raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     # generic version of copyFile which works for any platform:
     const bufSize = 8000 # better for memory manager
@@ -567,6 +599,8 @@ proc moveFile*(source, dest: string) {.rtl, extern: "nos$1",
       if moveFileW(s, d, 0'i32) == 0'i32: raiseOSError(osLastError())
     else:
       if moveFileA(source, dest, 0'i32) == 0'i32: raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     if c_rename(source, dest) != 0'i32:
       raiseOSError(osLastError(), $strerror(errno))
@@ -602,6 +636,8 @@ proc removeFile*(file: string) {.rtl, extern: "nos$1", tags: [WriteDirEffect].} 
           raiseOSError(osLastError())
         if deleteFile(f) == 0:
           raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     if c_remove(file) != 0'i32 and errno != ENOENT:
       raiseOSError(osLastError(), $strerror(errno))
@@ -618,6 +654,8 @@ proc execShellCmd*(command: string): int {.rtl, extern: "nos$1",
   ## module.
   when defined(linux):
     result = c_system(command) shr 8
+  elif defined(genode):
+    raiseOSError("system shell not available on Genode")
   else:
     result = c_system(command)
 
@@ -701,6 +739,8 @@ else:
       envComputed = true
 
 proc findEnvVar(key: string): int =
+  when defined(genode):
+    raiseOSError("environment not available on Genode")
   getEnvVarsC()
   var temp = key & '='
   for i in 0..high(environment):
@@ -713,6 +753,8 @@ proc getEnv*(key: string): TaintedString {.tags: [ReadEnvEffect].} =
   ## If the variable does not exist, "" is returned. To distinguish
   ## whether a variable exists or it's value is just "", call
   ## `existsEnv(key)`.
+  when defined(genode):
+    raiseOSError("environment not available on Genode")
   var i = findEnvVar(key)
   if i >= 0:
     return TaintedString(substr(environment[i], find(environment[i], '=')+1))
@@ -724,6 +766,8 @@ proc getEnv*(key: string): TaintedString {.tags: [ReadEnvEffect].} =
 proc existsEnv*(key: string): bool {.tags: [ReadEnvEffect].} =
   ## Checks whether the environment variable named `key` exists.
   ## Returns true if it exists, false otherwise.
+  when defined(genode):
+    raiseOSError("environment not available on Genode")
   if c_getenv(key) != nil: return true
   else: return findEnvVar(key) >= 0
 
@@ -735,27 +779,32 @@ proc putEnv*(key, val: string) {.tags: [WriteEnvEffect].} =
   # we guarantee that we don't free the memory before the program
   # ends (this is needed for POSIX compliance). It is also needed so that
   # the process itself may access its modified environment variables!
-  var indx = findEnvVar(key)
-  if indx >= 0:
-    environment[indx] = key & '=' & val
+  when defined(genode):
+    raiseOSError("environment not available on Genode")
   else:
-    add environment, (key & '=' & val)
-    indx = high(environment)
-  when defined(unix):
-    if c_putenv(environment[indx]) != 0'i32:
-      raiseOSError(osLastError())
-  else:
-    when useWinUnicode:
-      var k = newWideCString(key)
-      var v = newWideCString(val)
-      if setEnvironmentVariableW(k, v) == 0'i32: raiseOSError(osLastError())
+    var indx = findEnvVar(key)
+    if indx >= 0:
+      environment[indx] = key & '=' & val
     else:
-      if setEnvironmentVariableA(key, val) == 0'i32: raiseOSError(osLastError())
+      add environment, (key & '=' & val)
+      indx = high(environment)
+    when defined(unix):
+      if c_putenv(environment[indx]) != 0'i32:
+        raiseOSError(osLastError())
+    else:
+      when useWinUnicode:
+        var k = newWideCString(key)
+        var v = newWideCString(val)
+        if setEnvironmentVariableW(k, v) == 0'i32: raiseOSError(osLastError())
+      else:
+        if setEnvironmentVariableA(key, val) == 0'i32: raiseOSError(osLastError())
 
 iterator envPairs*(): tuple[key, value: TaintedString] {.tags: [ReadEnvEffect].} =
   ## Iterate over all `environments variables`:idx:. In the first component
   ## of the tuple is the name of the current variable stored, in the second
   ## its value.
+  when defined(genode):
+    raiseOSError("environment not available on Genode")
   getEnvVarsC()
   for i in 0..high(environment):
     var p = find(environment[i], '=')
@@ -787,6 +836,8 @@ iterator walkFiles*(pattern: string): string {.tags: [ReadDirEffect].} =
             yield splitFile(pattern).dir / extractFilename(ff)
         if findNextFile(res, f) == 0'i32: break
       findClose(res)
+  elif defined(genode):
+    raiseOSError("glob not available on Genode")
   else: # here we use glob
     var
       f: Glob
@@ -857,6 +908,8 @@ iterator walkDir*(dir: string; relative=false): tuple[kind: PathComponent, path:
             yield (k, xx)
           if findNextFile(h, f) == 0'i32: break
         findClose(h)
+    elif defined(genode):
+      raiseOSError("VFS library not loaded")
     else:
       var d = opendir(dir)
       if d != nil:
@@ -922,6 +975,8 @@ proc rawRemoveDir(dir: string) =
     if res == 0'i32 and lastError.int32 != 3'i32 and
         lastError.int32 != 18'i32 and lastError.int32 != 2'i32:
       raiseOSError(lastError)
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     if rmdir(dir) != 0'i32 and errno != ENOENT: raiseOSError(osLastError())
 
@@ -945,6 +1000,8 @@ proc rawCreateDir(dir: string) =
   elif defined(unix):
     if mkdir(dir, 0o777) != 0'i32 and errno != EEXIST:
       raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     when useWinUnicode:
       wrapUnary(res, createDirectoryW, dir)
@@ -960,6 +1017,8 @@ proc createDir*(dir: string) {.rtl, extern: "nos$1", tags: [WriteDirEffect].} =
   ## The full path is created. If this fails, `OSError` is raised. It does **not**
   ## fail if the path already exists because for most usages this does not
   ## indicate an error.
+  when defined(genode):
+    raiseOSError("VFS library not loaded")
   var omitNext = false
   when doslike:
     omitNext = isAbsolute(dir)
@@ -980,6 +1039,8 @@ proc copyDir*(source, dest: string) {.rtl, extern: "nos$1",
   ## files and directories will inherit the default permissions of a newly
   ## created file/directory for the user. To preserve attributes recursively on
   ## these platforms use `copyDirWithPermissions() <#copyDirWithPermissions>`_.
+  when defined(genode):
+    raiseOSError("VFS library not loaded")
   createDir(dest)
   for kind, path in walkDir(source):
     var noSource = path.substr(source.len()+1)
@@ -1007,6 +1068,8 @@ proc createSymlink*(src, dest: string) =
     else:
       if createSymbolicLinkA(dest, src, flag) == 0 or getLastError() != 0:
         raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     if symlink(src, dest) != 0:
       raiseOSError(osLastError())
@@ -1026,6 +1089,8 @@ proc createHardlink*(src, dest: string) =
     else:
       if createHardLinkA(dest, src, nil) == 0:
         raiseOSError(osLastError())
+  elif defined(genode):
+    raiseOSError("VFS does not support hardlinks")
   else:
     if link(src, dest) != 0:
       raiseOSError(osLastError())
@@ -1104,7 +1169,7 @@ proc parseCmdLine*(c: string): seq[string] {.
         else:
           a.add(c[i])
           inc(i)
-    else:
+    elif not defined(genode):
       case c[i]
       of '\'', '\"':
         var delim = c[i]
@@ -1200,6 +1265,8 @@ proc expandSymlink*(symlinkPath: string): string =
   ## On Windows this is a noop, ``symlinkPath`` is simply returned.
   when defined(windows):
     result = symlinkPath
+  elif (defined genode):
+    raiseOSError("VFS library not loaded")
   else:
     result = newString(256)
     var len = readlink(symlinkPath, result, 256)
@@ -1353,6 +1420,9 @@ proc getAppFilename*(): string {.rtl, extern: "nos$1", tags: [ReadIOEffect].} =
   ##
   ## **Note**: This does not work reliably on BSD.
 
+  when defined(genode):
+    raiseOSError("cannot determine process filename on Genode")
+
   # Linux: /proc/<pid>/exe
   # Solaris:
   # /proc/<pid>/object/a.out (filename only)
@@ -1411,6 +1481,9 @@ proc sleep*(milsecs: int) {.rtl, extern: "nos$1", tags: [TimeEffect].} =
   ## sleeps `milsecs` milliseconds.
   when defined(windows):
     winlean.sleep(int32(milsecs))
+  elif defined(genode):
+    ## TODO: a {.threadvar.} timer instance
+    timer.global.msleep(uint(milsecs))
   else:
     var a, b: Timespec
     a.tv_sec = Time(milsecs div 1000)
@@ -1426,6 +1499,8 @@ proc getFileSize*(file: string): BiggestInt {.rtl, extern: "nos$1",
     if resA == -1: raiseOSError(osLastError())
     result = rdFileSize(a)
     findClose(resA)
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     var f: File
     if open(f, file):
@@ -1437,6 +1512,10 @@ when defined(Windows):
   type
     DeviceId* = int32
     FileId* = int64
+elif defined(genode):
+  type
+    DeviceId* = pointer
+    FileId* = uint64
 else:
   type
     DeviceId* = Dev
@@ -1527,6 +1606,10 @@ proc getFileInfo*(handle: FileHandle): FileInfo =
     if getFileInformationByHandle(realHandle, addr rawInfo) == 0:
       raiseOSError(osLastError())
     rawToFormalFileInfo(rawInfo, result)
+
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
+
   else:
     var rawInfo: Stat
     if fstat(handle, rawInfo) < 0'i32:
@@ -1562,6 +1645,8 @@ proc getFileInfo*(path: string, followSymlink = true): FileInfo =
       raiseOSError(osLastError())
     rawToFormalFileInfo(rawInfo, result)
     discard closeHandle(handle)
+  elif defined(genode):
+    raiseOSError("VFS library not loaded")
   else:
     var rawInfo: Stat
     if followSymlink:

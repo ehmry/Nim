@@ -115,6 +115,41 @@ elif defined(windows) or defined(dos):
       if result != nil: return
     procAddrError(name)
 
+elif defined(genode):
+  #
+  # =======================================================================
+  # Native Genode Implementation
+  # =======================================================================
+  #
+
+  # this call all be safetly replaced, I only copied it from posix
+
+  # c stuff:
+  var
+    RTLD_NOW {.importc: "RTLD_NOW", header: "<dlfcn.h>".}: int
+
+  proc dlclose(lib: LibHandle) {.importc, header: "<dlfcn.h>".}
+  proc dlopen(path: cstring, mode: int): LibHandle {.
+      importc, header: "<dlfcn.h>".}
+  proc dlsym(lib: LibHandle, name: cstring): ProcAddr {.
+      importc, header: "<dlfcn.h>".}
+
+  proc dlerror(): cstring {.importc, header: "<dlfcn.h>".}
+
+  proc nimUnloadLibrary(lib: LibHandle) =
+    dlclose(lib)
+
+  proc nimLoadLibrary(path: string): LibHandle =
+    result = dlopen(path, RTLD_NOW)
+    when defined(nimDebugDlOpen):
+      let error = dlerror()
+      if error != nil:
+        c_fprintf(c_stdout, "%s\n", error)
+
+  proc nimGetProcAddr(lib: LibHandle, name: cstring): ProcAddr =
+    result = dlsym(lib, name)
+    if result == nil: procAddrError(name)
+
 else:
   {.error: "no implementation for dyncalls".}
 

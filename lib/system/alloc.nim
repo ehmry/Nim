@@ -141,6 +141,16 @@ elif defined(windows):
     when reallyOsDealloc: virtualFree(p, 0, MEM_RELEASE)
     #VirtualFree(p, size, MEM_DECOMMIT)
 
+elif defined(genode):
+  const
+    baseEnv = "<base/env.h>"
+
+  proc osAllocPages(size: int): pointer {. header: baseEnv, importcpp:
+    "Genode::env()->rm_session()->attach(Genode::env()->ram_session()->alloc(@))".}
+
+  proc osDeallocPages(p: pointer, size: int) {. header: baseEnv, importcpp:
+    "Genode::env()->rm_session()->detach(#)".}
+
 elif hostOS == "standalone":
   var
     theHeap: array[1024*PageSize, float64] # 'float64' for alignment
