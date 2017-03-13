@@ -126,7 +126,7 @@ elif defined(windows) or defined(dos):
     decorated[m] = '@'
     for i in countup(0, 50):
       var k = i * 4
-      if k div 100 == 0: 
+      if k div 100 == 0:
         if k div 10 == 0:
           m = m + 1
         else:
@@ -142,6 +142,17 @@ elif defined(windows) or defined(dos):
       result = getProcAddress(cast[THINSTANCE](lib), decorated)
       if result != nil: return
     procAddrError(name)
+
+elif defined(genode):
+
+  proc nimUnloadLibrary(lib: LibHandle) {.
+    error: "nimUnloadLibrary not implemented".}
+
+  proc nimLoadLibrary(path: string): LibHandle {.
+    error: "nimLoadLibrary not implemented".}
+
+  proc nimGetProcAddr(lib: LibHandle, name: cstring): ProcAddr {.
+    error: "nimGetProcAddr not implemented".}
 
 else:
   {.error: "no implementation for dyncalls".}

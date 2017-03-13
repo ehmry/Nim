@@ -934,7 +934,6 @@ proc genEcho(p: BProc, n: PNode) =
   # this unusal way of implementing it ensures that e.g. ``echo("hallo", 45)``
   # is threadsafe.
   internalAssert n.kind == nkBracket
-  discard lists.includeStr(p.module.headerFiles, "<stdio.h>")
   var args: Rope = nil
   var a: TLoc
   for i in countup(0, n.len-1):
@@ -943,9 +942,15 @@ proc genEcho(p: BProc, n: PNode) =
     else:
       initLocExpr(p, n.sons[i], a)
       addf(args, ", $1? ($1)->data:\"nil\"", [rdLoc(a)])
-  linefmt(p, cpsStmts, "printf($1$2);$n",
-          makeCString(repeat("%s", n.len) & tnl), args)
-  linefmt(p, cpsStmts, "fflush(stdout);$n")
+  if platform.targetOS == osGenode:
+    # bypass libc and print directly to the Genode LOG session
+    discard lists.includeStr(p.module.headerFiles, "<base/log.h>")
+    linefmt(p, cpsStmts, """Genode::log(""$1);$n""", args)
+  else:
+    discard lists.includeStr(p.module.headerFiles, "<stdio.h>")
+    linefmt(p, cpsStmts, "printf($1$2);$n",
+            makeCString(repeat("%s", n.len) & tnl), args)
+    linefmt(p, cpsStmts, "fflush(stdout);$n")
 
 proc gcUsage(n: PNode) =
   if gSelectedGC == gcNone: message(n.info, warnGcMem, n.renderTree)
