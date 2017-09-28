@@ -160,10 +160,26 @@ export asyncfutures, asyncstreams
 
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
+when defined(genode):
+  # Native Genode asynchronous signaling support.
+  import genode, lists
+
+  const SignalsH = "genode_cpp/signals.h"
+  type
+    SignalDispatcher {.importcpp, header: SignalsH, final, pure.} = object
+      cap {.importcpp.}: SignalContextCapability
+
+    SignalReceiver* = ref object
+      disp: SignalDispatcher
+      future: Future[void]
+      le: DoublyLinkedNode[SignalReceiver]
+
 type
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[tuple[finishAt: float, fut: Future[void]]]
     callbacks*: Deque[proc ()]
+    when defined(genode):
+      signals*: DoublyLinkedRing[SignalReceiver]
 
 proc processTimers(p: PDispatcherBase) {.inline.} =
   #Process just part if timers at a step
@@ -937,6 +953,8 @@ else:
     result.selector = newSelector()
     result.timers.newHeapQueue()
     result.callbacks = initDeque[proc ()](64)
+    when defined(genode):
+      result.signals = initDoublyLinkedRing[SignalReceiver]()
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -1007,11 +1025,40 @@ else:
     let p = getGlobalDispatcher()
     p.selector.len != 0 or p.timers.len != 0 or p.callbacks.len != 0
 
+  when defined(genode):
+    type DispatchSuspendFunctor {.importcpp.} = object
+      ## C++ interface object for checking application suspend state.
+      arg {.importcpp.}: pointer
+
+    proc libcSuspend(state: DispatchSuspendFunctor, timeoutMs = 0): culong {.
+      importcpp: "Libc::suspend(@)".}
+      ## Suspend the execution of the calling user context.
+
+    proc libcResumeAll() {.importcpp: "Libc::resume_all()".}
+      ## Resume all user contexts.
+
+    proc dispatchSuspend(arg: pointer): cint {.exportc.} =
+      ## Implementation of Libc::Suspend_functor::suspend.
+      ## This procedure is called from the libc signal handling context
+      ## to check if the application is suspended.
+      let p = cast[ptr PDispatcher](arg)
+      if p.selector.len == 0 and p.timers.len == 0 and p.callbacks.len == 0:
+        result = 1
+
   proc poll*(timeout = 500) =
     let p = getGlobalDispatcher()
-    if p.selector.len == 0 and p.timers.len == 0 and p.callbacks.len == 0:
-      raise newException(ValueError,
-        "No handles or timers registered in dispatcher.")
+    when defined(genode):
+      if p.selector.len == 0 and p.timers.len == 0 and p.callbacks.len == 0:
+        if p.signals.head.isNil:
+          raise newException(ValueError,
+            "No handles, timers, or signals registered in dispatcher.")
+        else:
+          let state = DispatchSuspendFunctor(arg: gDisp.addr)
+          discard libcSuspend(state)
+    else:
+      if p.selector.len == 0 and p.timers.len == 0 and p.callbacks.len == 0:
+        raise newException(ValueError,
+          "No handles or timers registered in dispatcher.")
 
     if p.selector.len > 0:
       for info in p.selector.select(p.adjustedTimeout(timeout)):
@@ -1040,7 +1087,8 @@ else:
           discard
 
     # Timer processing.
-    processTimers(p)
+    if p.timers.len > 0:
+      processTimers(p)
     # Callback queue processing
     processPendingCallbacks(p)
 
@@ -1353,3 +1401,41 @@ proc waitFor*[T](fut: Future[T]): T =
     poll()
 
   fut.read
+
+when defined(genode):
+
+  proc initSignalDispatcher(sd: SignalDispatcher; sh: SignalReceiver)
+    {.importcpp: "#.initSignalDispatcher(&_genode_env->ep(), #)".}
+
+  proc deinitSignalDispatcher(sd: SignalDispatcher) {.importcpp.}
+
+  proc newSignalReceiver*(): SignalReceiver =
+    new result
+    result.le = newDoublyLinkedNode result
+    initSignalDispatcher result.disp, result
+    getGlobalDispatcher().signals.append result.le
+
+  proc dissolve*(sig: SignalReceiver) =
+    ## Dissolve signal handler from entrypoint, handler will persist until this is called.
+    deinitSignalDispatcher sig.disp
+    getGlobalDispatcher().signals.remove sig.le
+
+  proc cap*(sh: SignalReceiver): SignalContextCapability = sh.disp.cap
+    ## Signal context capability. Can be delegated to external components.
+
+  proc signal*(sh: SignalReceiver): Future[void] =
+    ## Get a future that completes on the next signal received.
+    # Allocating a new Future for every signal received seems expensive
+    # but safer than a FutureVar.
+    new result
+    if not sh.future.isNil:
+      raise newException(SystemError, "Signal handler already has a pending future")
+    sh.future = result
+
+  proc nimHandleSignal(p: pointer) {.exportc.} =
+    ## C symbol invoked by entrypoint during signal dispatch.
+    let sh = cast[SignalReceiver](p)
+    if not sh.future.isNil:
+      complete sh.future
+      sh.future = nil
+      libcResumeAll()
