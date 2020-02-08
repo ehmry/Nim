@@ -220,6 +220,29 @@ when defined(JS):
     system.inc(a, b)
   {.pop.}
 
+elif defined(genode):
+  include genode/env
+  const rtcHeader = "<rtc_session/connection.h>"
+
+  type Timestamp {.
+    importcpp: "Rtc::Timestamp", header: rtcHeader, final, pure.} = object
+      microsecond*: cuint
+      second*: cuint
+      minute*: cuint
+      hour*: cuint
+      day*: cuint
+      month*: cuint
+      year*: cuint
+
+  proc rtcCurrentTime(): Timestamp =
+    type RtcConnection {.importcpp: "Rtc::Connection", header: rtcHeader, final, pure.} = object
+    proc initRtc(env: GenodeEnvObj; label: cstring): RtcConnection {.
+      importcpp, constructor.}
+    proc current_time(rtc: RtcConnection): Timestamp {.importcpp.}
+    let session = initRtc(runtimeEnv.toObj, "Nim runtime")
+      # is this labeling useful?
+    session.current_time()
+
 elif defined(posix):
   import posix
 
@@ -1096,34 +1119,46 @@ when defined(JS):
     result.isDst = false
 
 else:
-  proc toAdjUnix(tm: Tm): int64 =
-    let epochDay = toEpochDay(tm.tm_mday, (tm.tm_mon + 1).Month,
-                              tm.tm_year.int + 1900)
-    result = epochDay * secondsInDay
-    result.inc tm.tm_hour * secondsInHour
-    result.inc tm.tm_min * 60
-    result.inc tm.tm_sec
+  when defined(genode):
+    proc toEpochSeconds(ts: Timestamp): int64 =
+      let epochDay = toEpochDay(ts.day, ts.month.Month, ts.year.int)
+      result = epochDay * secondsInDay
+      result.inc ts.hour.int * secondsInHour
+      result.inc ts.minute.int * 60
+      result.inc ts.second.int
 
-  proc getLocalOffsetAndDst(unix: int64): tuple[offset: int, dst: bool] =
-    # Windows can't handle unix < 0, so we fall back to unix = 0.
-    # FIXME: This should be improved by falling back to the WinAPI instead.
-    when defined(windows):
-      if unix < 0:
-        var a = 0.CTime
-        let tmPtr = localtime(a)
-        if not tmPtr.isNil:
-          let tm = tmPtr[]
-          return ((0 - tm.toAdjUnix).int, false)
-        return (0, false)
+    proc getLocalOffsetAndDst(unix: int64): tuple[offset: int, dst: bool] =
+      (0, false)
 
-    # In case of a 32-bit time_t, we fallback to the closest available
-    # timezone information.
-    var a = clamp(unix, low(CTime).int64, high(CTime).int64).CTime
-    let tmPtr = localtime(a)
-    if not tmPtr.isNil:
-      let tm = tmPtr[]
-      return ((a.int64 - tm.toAdjUnix).int, tm.tm_isdst > 0)
-    return (0, false)
+  else:
+    proc toAdjUnix(tm: Tm): int64 =
+      let epochDay = toEpochDay(tm.tm_mday, (tm.tm_mon + 1).Month,
+                                tm.tm_year.int + 1900)
+      result = epochDay * secondsInDay
+      result.inc tm.tm_hour * secondsInHour
+      result.inc tm.tm_min * 60
+      result.inc tm.tm_sec
+
+    proc getLocalOffsetAndDst(unix: int64): tuple[offset: int, dst: bool] =
+      # Windows can't handle unix < 0, so we fall back to unix = 0.
+      # FIXME: This should be improved by falling back to the WinAPI instead.
+      when defined(windows):
+        if unix < 0:
+          var a = 0.CTime
+          let tmPtr = localtime(a)
+          if not tmPtr.isNil:
+            let tm = tmPtr[]
+            return ((0 - tm.toAdjUnix).int, false)
+          return (0, false)
+
+      # In case of a 32-bit time_t, we fallback to the closest available
+      # timezone information.
+      var a = clamp(unix, low(CTime).int64, high(CTime).int64).CTime
+      let tmPtr = localtime(a)
+      if not tmPtr.isNil:
+        let tm = tmPtr[]
+        return ((a.int64 - tm.toAdjUnix).int, tm.tm_isdst > 0)
+      return (0, false)
 
   proc localZonedTimeFromTime(time: Time): ZonedTime =
     let (offset, dst) = getLocalOffsetAndDst(time.seconds)
@@ -1211,6 +1246,12 @@ proc getTime*(): Time {.tags: [TimeEffect], benign.} =
     gettimeofday(a)
     result = initTime(a.tv_sec.int64,
                       convert(Microseconds, Nanoseconds, a.tv_usec.int))
+  elif defined(genode):
+    let ts = rtcCurrentTime()
+    result.seconds = ts.toEpochSeconds
+    result.nanosecond = ts.microsecond.int  div 1_000
+      # TODO: need a timer session for actual sub-second accuracy
+
   elif defined(posix):
     var ts: Timespec
     discard clock_gettime(CLOCK_REALTIME, ts)
@@ -2545,6 +2586,9 @@ when not defined(JS):
       gettimeofday(a)
       result = toBiggestFloat(a.tv_sec.int64) + toBiggestFloat(
           a.tv_usec)*0.00_0001
+    elif defined(genode):
+      let ts = rtcCurrentTime()
+      ts.toEpochSeconds.float + (ts.microsecond.float / 1_000_000.0)
     elif defined(posix):
       var ts: Timespec
       discard clock_gettime(CLOCK_REALTIME, ts)
@@ -2665,7 +2709,7 @@ proc fractional*(dur: Duration): Duration {.inline, deprecated.} =
         nanoseconds = 9)
   initDuration(nanoseconds = dur.nanosecond)
 
-when not defined(JS):
+when not defined(JS) and not defined(Genode):
   proc unixTimeToWinTime*(time: CTime): int64
       {.deprecated: "Use toWinTime instead".} =
     ## Converts a UNIX `Time` (``time_t``) to a Windows file time
@@ -2738,6 +2782,8 @@ proc getTimezone*(): int
     # This is wrong since it will include DST offsets, but the behavior has
     # always been wrong for bsd and the proc is deprecated so lets ignore it.
     return now().utcOffset
+  elif defined(genode):
+    discard
   else:
     return timezone
 
