@@ -15,18 +15,18 @@
 ##   import os
 ##
 ##   let myFile = "/path/to/my/file.nim"
-## 
+##
 ##   let pathSplit = splitPath(myFile)
 ##   assert pathSplit.head == "/path/to/my"
 ##   assert pathSplit.tail == "file.nim"
-## 
+##
 ##   assert parentDir(myFile) == "/path/to/my"
-## 
+##
 ##   let fileSplit = splitFile(myFile)
 ##   assert fileSplit.dir == "/path/to/my"
 ##   assert fileSplit.name == "file"
 ##   assert fileSplit.ext == ".nim"
-## 
+##
 ##   assert myFile.changeFileExt("c") == "/path/to/my/file.c"
 
 ##
@@ -62,6 +62,12 @@ elif defined(posix):
 
   proc toTime(ts: Timespec): times.Time {.inline.} =
     result = initTime(ts.tv_sec.int64, ts.tv_nsec.int)
+elif defined(genode):
+  import genode/vfs, genode/timer
+  import times
+  template raiseGenodeError(info: string) =
+    raiseOSError(OSErrorCode(-1), info)
+
 else:
   {.error: "OS module not ported to your operating system!".}
 
@@ -956,6 +962,12 @@ proc existsFile*(filename: string): bool {.rtl, extern: "nos$1",
       var a = getFileAttributesA(filename)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_DIRECTORY) == 0'i32
+  elif defined(genode):
+    try:
+      let stat = vfs.stat(filename)
+      stat.isFile
+    except:
+      false
   else:
     var res: Stat
     return stat(filename, res) >= 0'i32 and S_ISREG(res.st_mode)
@@ -975,6 +987,12 @@ proc existsDir*(dir: string): bool {.rtl, extern: "nos$1", tags: [ReadDirEffect]
       var a = getFileAttributesA(dir)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_DIRECTORY) != 0'i32
+  when defined(genode):
+    try:
+      let stat = vfs.stat(dir)
+      stat.isDir
+    except:
+      false
   else:
     var res: Stat
     return stat(dir, res) >= 0'i32 and S_ISDIR(res.st_mode)
@@ -995,6 +1013,12 @@ proc symlinkExists*(link: string): bool {.rtl, extern: "nos$1",
       var a = getFileAttributesA(link)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32
+  when defined(genode):
+    try:
+      let stat = vfs.stat(link)
+      stat.isSymlink
+    except:
+      false
   else:
     var res: Stat
     return lstat(link, res) >= 0'i32 and S_ISLNK(res.st_mode)
@@ -1016,10 +1040,13 @@ proc dirExists*(dir: string): bool {.inline, noNimScript.} =
   existsDir(dir)
 
 when not defined(windows) and not weirdTarget:
-  proc checkSymlink(path: string): bool =
-    var rawInfo: Stat
-    if lstat(path, rawInfo) < 0'i32: result = false
-    else: result = S_ISLNK(rawInfo.st_mode)
+  when defined(genode):
+    proc checkSymlink(path: string): bool = symlinkExists(path)
+  else:
+    proc checkSymlink(path: string): bool =
+      var rawInfo: Stat
+      if lstat(path, rawInfo) < 0'i32: result = false
+      else: result = S_ISLNK(rawInfo.st_mode)
 
 const
   ExeExts* = ## Platform specific file extension for executables.
@@ -1038,46 +1065,46 @@ proc findExe*(exe: string, followSymlinks: bool = true;
   ## If the system supports symlinks it also resolves them until it
   ## meets the actual file. This behavior can be disabled if desired
   ## by setting `followSymlinks = false`.
-
-  if exe.len == 0: return
-  template checkCurrentDir() =
-    for ext in extensions:
-      result = addFileExt(exe, ext)
-      if existsFile(result): return
-  when defined(posix):
-    if '/' in exe: checkCurrentDir()
-  else:
-    checkCurrentDir()
-  let path = string(getEnv("PATH"))
-  for candidate in split(path, PathSep):
-    if candidate.len == 0: continue
-    when defined(windows):
-      var x = (if candidate[0] == '"' and candidate[^1] == '"':
-                substr(candidate, 1, candidate.len-2) else: candidate) /
-              exe
+  when not defined(genode):
+    if exe.len == 0: return
+    template checkCurrentDir() =
+      for ext in extensions:
+        result = addFileExt(exe, ext)
+        if existsFile(result): return
+    when defined(posix):
+      if '/' in exe: checkCurrentDir()
     else:
-      var x = expandTilde(candidate) / exe
-    for ext in extensions:
-      var x = addFileExt(x, ext)
-      if existsFile(x):
-        when not defined(windows):
-          while followSymlinks: # doubles as if here
-            if x.checkSymlink:
-              var r = newString(256)
-              var len = readlink(x, r, 256)
-              if len < 0:
-                raiseOSError(osLastError())
-              if len > 256:
-                r = newString(len+1)
-                len = readlink(x, r, len)
-              setLen(r, len)
-              if isAbsolute(r):
-                x = r
+      checkCurrentDir()
+    let path = string(getEnv("PATH"))
+    for candidate in split(path, PathSep):
+      if candidate.len == 0: continue
+      when defined(windows):
+        var x = (if candidate[0] == '"' and candidate[^1] == '"':
+                  substr(candidate, 1, candidate.len-2) else: candidate) /
+                exe
+      else:
+        var x = expandTilde(candidate) / exe
+      for ext in extensions:
+        var x = addFileExt(x, ext)
+        if existsFile(x):
+          when not defined(windows):
+            while followSymlinks: # doubles as if here
+              if x.checkSymlink:
+                var r = newString(256)
+                var len = readlink(x, r, 256)
+                if len < 0:
+                  raiseOSError(osLastError())
+                if len > 256:
+                  r = newString(len+1)
+                  len = readlink(x, r, len)
+                setLen(r, len)
+                if isAbsolute(r):
+                  x = r
+                else:
+                  x = parentDir(x) / r
               else:
-                x = parentDir(x) / r
-            else:
-              break
-        return x
+                break
+          return x
   result = ""
 
 when weirdTarget:
@@ -1091,7 +1118,9 @@ proc getLastModificationTime*(file: string): times.Time {.rtl, extern: "nos$1", 
   ## * `getLastAccessTime proc <#getLastAccessTime,string>`_
   ## * `getCreationTime proc <#getCreationTime,string>`_
   ## * `fileNewer proc <#fileNewer,string,string>`_
-  when defined(posix):
+  when defined(genode):
+    fromUnix(getLastModificationTime(vfs.stat(file)).int64)
+  elif defined(posix):
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError())
     result = res.st_mtim.toTime
@@ -1109,7 +1138,9 @@ proc getLastAccessTime*(file: string): times.Time {.rtl, extern: "nos$1", noNimS
   ## * `getLastModificationTime proc <#getLastModificationTime,string>`_
   ## * `getCreationTime proc <#getCreationTime,string>`_
   ## * `fileNewer proc <#fileNewer,string,string>`_
-  when defined(posix):
+  when defined(genode):
+    discard
+  elif defined(posix):
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError())
     result = res.st_atim.toTime
@@ -1131,7 +1162,9 @@ proc getCreationTime*(file: string): times.Time {.rtl, extern: "nos$1", noNimScr
   ## * `getLastModificationTime proc <#getLastModificationTime,string>`_
   ## * `getLastAccessTime proc <#getLastAccessTime,string>`_
   ## * `fileNewer proc <#fileNewer,string,string>`_
-  when defined(posix):
+  when defined(genode):
+    discard
+  elif defined(posix):
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError())
     result = res.st_ctim.toTime
@@ -1158,6 +1191,9 @@ proc fileNewer*(a, b: string): bool {.rtl, extern: "nos$1", noNimScript.} =
       result = getLastModificationTime(a) > getLastModificationTime(b)
   else:
     result = getLastModificationTime(a) > getLastModificationTime(b)
+
+when defined(genode):
+  var cwd: string
 
 proc getCurrentDir*(): string {.rtl, extern: "nos$1", tags: [], noNimScript.} =
   ## Returns the `current working directory`:idx: i.e. where the built
@@ -1198,6 +1234,8 @@ proc getCurrentDir*(): string {.rtl, extern: "nos$1", tags: [], noNimScript.} =
         else:
           setLen(result, L)
           break
+  elif defined(genode):
+    cwd
   else:
     var bufsize = 1024 # should be enough
     result = newString(bufsize)
@@ -1230,7 +1268,12 @@ proc setCurrentDir*(newDir: string) {.inline, tags: [], noNimScript.} =
     else:
       if setCurrentDirectoryA(newDir) == 0'i32: raiseOSError(osLastError())
   else:
-    if chdir(newDir) != 0'i32: raiseOSError(osLastError())
+    when defined(genode):
+      if not vfs.stat(newDir).isDir:
+        raiseGenodeError("new working directory is not an existing directory")
+      cwd = newDir
+    when defined(posix):
+      if chdir(newDir) != 0'i32: raiseOSError(osLastError())
 
 when not weirdTarget:
   proc absolutePath*(path: string, root = getCurrentDir()): string {.noNimScript.} =
@@ -1368,6 +1411,9 @@ proc sameFile*(path1, path2: string): bool {.rtl, extern: "nos$1",
     discard closeHandle(f2)
 
     if not success: raiseOSError(lastErr)
+  elif defined(genode):
+    path1 == path2
+    # TODO: CWD
   else:
     var a, b: Stat
     if stat(path1, a) < 0'i32 or stat(path2, b) < 0'i32:
@@ -1437,7 +1483,12 @@ proc getFilePermissions*(filename: string): set[FilePermission] {.
   ## See also:
   ## * `setFilePermissions proc <#setFilePermissions,string,set[FilePermission]>`_
   ## * `FilePermission enum <#FilePermission>`_
-  when defined(posix):
+  when defined(genode):
+    let stat = vfs.stat(filename)
+    if stat.readable: result.incl(fpUserRead)
+    if stat.writeable: result.incl(fpUserWrite)
+    if stat.executable: result.incl(fpUserExec)
+  elif defined(posix):
     var a: Stat
     if stat(filename, a) < 0'i32: raiseOSError(osLastError())
     result = {}
@@ -1475,7 +1526,10 @@ proc setFilePermissions*(filename: string, permissions: set[FilePermission]) {.
   ## See also:
   ## * `getFilePermissions <#getFilePermissions,string>`_
   ## * `FilePermission enum <#FilePermission>`_
-  when defined(posix):
+  when defined(genode):
+    raiseGenodeError("setFilePermissions not implemented")
+    # TODO: not sure if this is implemented upstream
+  elif defined(posix):
     var p = 0.Mode
     if fpUserRead in permissions: p = p or S_IRUSR.Mode
     if fpUserWrite in permissions: p = p or S_IWUSR.Mode
@@ -1611,6 +1665,10 @@ proc tryRemoveFile*(file: string): bool {.rtl, extern: "nos$1", tags: [WriteDirE
          setFileAttributes(f, FILE_ATTRIBUTE_NORMAL) != 0 and
          deleteFile(f) != 0:
         result = true
+  elif defined(genode):
+    result = case vfs.unlink(file)
+    of UNLINK_ERR_NO_ENTRY, UNLINK_OK: true
+    else: false
   else:
     if unlink(file) != 0'i32 and errno != ENOENT:
       result = false
@@ -1629,11 +1687,19 @@ proc removeFile*(file: string) {.rtl, extern: "nos$1", tags: [WriteDirEffect], n
   ## * `copyFileWithPermissions proc <#copyFileWithPermissions,string,string>`_
   ## * `tryRemoveFile proc <#tryRemoveFile,string>`_
   ## * `moveFile proc <#moveFile,string,string>`_
-  if not tryRemoveFile(file):
-    when defined(Windows):
-      raiseOSError(osLastError())
+  when defined(genode):
+    let err = vfs.unlink(file)
+    case err
+    of UNLINK_ERR_NO_ENTRY, UNLINK_OK:
+      discard
     else:
-      raiseOSError(osLastError(), $strerror(errno))
+      raiseGenodeError($err)
+  else:
+    if not tryRemoveFile(file):
+      when defined(Windows):
+        raiseOSError(osLastError())
+      else:
+        raiseOSError(osLastError(), $strerror(errno))
 
 proc tryMoveFSObject(source, dest: string): bool {.noNimScript.} =
   ## Moves a file or directory from `source` to `dest`.
@@ -1648,6 +1714,15 @@ proc tryMoveFSObject(source, dest: string): bool {.noNimScript.} =
       if moveFileExW(s, d, MOVEFILE_COPY_ALLOWED) == 0'i32: raiseOSError(osLastError())
     else:
       if moveFileExA(source, dest, MOVEFILE_COPY_ALLOWED) == 0'i32: raiseOSError(osLastError())
+  elif defined(genode):
+    let err = rename(source, dest)
+    case err
+    of RENAME_OK:
+      return true
+    of RENAME_ERR_CROSS_FS:
+      return false
+    else:
+      raiseOSError(OSErrorCode(-0), $err)
   else:
     if c_rename(source, dest) != 0'i32:
       let err = osLastError()
@@ -1753,6 +1828,10 @@ template walkCommon(pattern: string, filter) =
           let errCode = getLastError()
           if errCode == ERROR_NO_MORE_FILES: break
           else: raiseOSError(errCode.OSErrorCode)
+  elif defined(genode):
+    echo "walkCommon not implemented"
+    quit -1
+    # TODO: implement globbing in pure Nim
   else: # here we use glob
     var
       f: Glob
@@ -1850,6 +1929,8 @@ proc expandFilename*(filename: string): string {.rtl, extern: "nos$1",
       result = x
     if not existsFile(result) and not existsDir(result):
       raise newException(OSError, "file '" & result & "' does not exist")
+  elif defined(genode):
+    result = filename
   else:
     # according to Posix we don't need to allocate space for result pathname.
     # But we need to free return value with free(3).
@@ -1950,6 +2031,9 @@ iterator walkDir*(dir: string; relative=false): tuple[kind: PathComponent, path:
             let errCode = getLastError()
             if errCode == ERROR_NO_MORE_FILES: break
             else: raiseOSError(errCode.OSErrorCode)
+    elif defined(genode):
+      echo "walkDir not implemented"
+      quit -1 # TODO
     else:
       var d = opendir(dir)
       if d != nil:
@@ -2043,6 +2127,13 @@ proc rawRemoveDir(dir: string) {.noNimScript.} =
     if res == 0'i32 and lastError.int32 != 3'i32 and
         lastError.int32 != 18'i32 and lastError.int32 != 2'i32:
       raiseOSError(lastError)
+  elif defined(genode):
+    let err = vfs.unlink(dir)
+    case err
+    of UNLINK_ERR_NO_ENTRY, UNLINK_OK:
+      discard
+    else:
+      raiseGenodeError($err)
   else:
     if rmdir(dir) != 0'i32 and errno != ENOENT: raiseOSError(osLastError())
 
@@ -2099,6 +2190,15 @@ proc rawCreateDir(dir: string): bool {.noNimScript.} =
     else:
       #echo res
       raiseOSError(osLastError(), dir)
+  elif defined(genode):
+    let err = vfs.createDir(dir)
+    case err
+    of OPENDIR_OK:
+      return true
+    of OPENDIR_ERR_NODE_ALREADY_EXISTS:
+      return false
+    else:
+      raiseGenodeError($err)
   else:
     when useWinUnicode:
       wrapUnary(res, createDirectoryW, dir)
@@ -2237,6 +2337,10 @@ proc createSymlink*(src, dest: string) {.noNimScript.} =
     else:
       if createSymbolicLinkA(dest, src, flag) == 0 or getLastError() != 0:
         raiseOSError(osLastError())
+  elif defined(genode):
+    # let err = vfs.symlink(src, dest)
+    # if err != OPENLINK_OK:
+    raiseGenodeError("symlink not implemented")
   else:
     if symlink(src, dest) != 0:
       raiseOSError(osLastError())
@@ -2259,6 +2363,8 @@ proc createHardlink*(src, dest: string) {.noNimScript.} =
     else:
       if createHardLinkA(dest, src, nil) == 0:
         raiseOSError(osLastError())
+  elif defined(genode):
+    raiseGenodeError("hardlinking not possible for this platform")
   else:
     if link(src, dest) != 0:
       raiseOSError(osLastError())
@@ -2289,7 +2395,7 @@ proc copyFileWithPermissions*(source, dest: string,
   ## * `moveFile proc <#moveFile,string,string>`_
   ## * `copyDirWithPermissions proc <#copyDirWithPermissions,string,string>`_
   copyFile(source, dest)
-  when not defined(Windows):
+  when not defined(Windows) and not defined(genode):
     try:
       setFilePermissions(dest, getFilePermissions(source))
     except:
@@ -2324,7 +2430,7 @@ proc copyDirWithPermissions*(source, dest: string,
   ## * `existsOrCreateDir proc <#existsOrCreateDir,string>`_
   ## * `createDir proc <#createDir,string>`_
   createDir(dest)
-  when not defined(Windows):
+  when not defined(Windows) and not defined(genode):
     try:
       setFilePermissions(dest, getFilePermissions(source))
     except:
@@ -2366,6 +2472,8 @@ proc expandSymlink*(symlinkPath: string): string {.noNimScript.} =
   ## * `createSymlink proc <#createSymlink,string,string>`_
   when defined(windows):
     result = symlinkPath
+  elif defined(genode):
+    raiseGenodeError("expandSymlink not implemented")
   else:
     result = newString(256)
     var len = readlink(symlinkPath, result, 256)
@@ -2415,63 +2523,64 @@ proc parseCmdLine*(c: string): seq[string] {.
   ## * `paramCount proc <#paramCount>`_
   ## * `paramStr proc <#paramStr,int>`_
   ## * `commandLineParams proc <#commandLineParams>`_
-
   result = @[]
-  var i = 0
-  var a = ""
-  while true:
-    setLen(a, 0)
-    # eat all delimiting whitespace
-    while i < c.len and c[i] in {' ', '\t', '\l', '\r'}: inc(i)
-    if i >= c.len: break
-    when defined(windows):
-      # parse a single argument according to the above rules:
-      var inQuote = false
-      while i < c.len:
-        case c[i]
-        of '\\':
-          var j = i
-          while j < c.len and c[j] == '\\': inc(j)
-          if j < c.len and c[j] == '"':
-            for k in 1..(j-i) div 2: a.add('\\')
-            if (j-i) mod 2 == 0:
-              i = j
+  when defined(genode):
+    result = @[]
+    var i = 0
+    var a = ""
+    while true:
+      setLen(a, 0)
+      # eat all delimiting whitespace
+      while i < c.len and c[i] in {' ', '\t', '\l', '\r'}: inc(i)
+      if i >= c.len: break
+      when defined(windows):
+        # parse a single argument according to the above rules:
+        var inQuote = false
+        while i < c.len:
+          case c[i]
+          of '\\':
+            var j = i
+            while j < c.len and c[j] == '\\': inc(j)
+            if j < c.len and c[j] == '"':
+              for k in 1..(j-i) div 2: a.add('\\')
+              if (j-i) mod 2 == 0:
+                i = j
+              else:
+                a.add('"')
+                i = j+1
             else:
-              a.add('"')
-              i = j+1
+              a.add(c[i])
+              inc(i)
+          of '"':
+            inc(i)
+            if not inQuote: inQuote = true
+            elif i < c.len and c[i] == '"':
+              a.add(c[i])
+              inc(i)
+            else:
+              inQuote = false
+              break
+          of ' ', '\t':
+            if not inQuote: break
+            a.add(c[i])
+            inc(i)
           else:
             a.add(c[i])
             inc(i)
-        of '"':
-          inc(i)
-          if not inQuote: inQuote = true
-          elif i < c.len and c[i] == '"':
-            a.add(c[i])
-            inc(i)
-          else:
-            inQuote = false
-            break
-        of ' ', '\t':
-          if not inQuote: break
-          a.add(c[i])
-          inc(i)
-        else:
-          a.add(c[i])
-          inc(i)
-    else:
-      case c[i]
-      of '\'', '\"':
-        var delim = c[i]
-        inc(i) # skip ' or "
-        while i < c.len and c[i] != delim:
-          add a, c[i]
-          inc(i)
-        if i < c.len: inc(i)
       else:
-        while i < c.len and c[i] > ' ':
-          add(a, c[i])
-          inc(i)
-    add(result, a)
+        case c[i]
+        of '\'', '\"':
+          var delim = c[i]
+          inc(i) # skip ' or "
+          while i < c.len and c[i] != delim:
+            add a, c[i]
+            inc(i)
+          if i < c.len: inc(i)
+        else:
+          while i < c.len and c[i] > ' ':
+            add(a, c[i])
+            inc(i)
+      add(result, a)
 
 when defined(nimdoc):
   # Common forward declaration docstring block for parameter retrieval procs.
@@ -2781,6 +2890,8 @@ proc sleep*(milsecs: int) {.rtl, extern: "nos$1", tags: [TimeEffect], noNimScrip
   ## Sleeps `milsecs` milliseconds.
   when defined(windows):
     winlean.sleep(int32(milsecs))
+  elif defined(genode):
+    timer.sleep(milsecs)
   else:
     var a, b: Timespec
     a.tv_sec = posix.Time(milsecs div 1000)
@@ -2808,6 +2919,10 @@ when defined(Windows) or weirdTarget:
   type
     DeviceId* = int32
     FileId* = int64
+elif defined(genode):
+  type
+    DeviceId* = culong
+    FileId* = culong
 else:
   type
     DeviceId* = Dev
@@ -2857,6 +2972,24 @@ template rawToFormalFileInfo(rawInfo, path, formalInfo): untyped =
       formalInfo.kind = pcDir
     if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32:
       formalInfo.kind = succ(result.kind)
+
+  elif defined(genode):
+    formalInfo.id.device = rawInfo.device
+    formalInfo.id.file = rawInfo.inode
+    formalInfo.size = rawInfo.size
+    formalInfo.lastWriteTime = fromUnix(rawInfo.getLastModificationTime)
+    if rawInfo.isFile:
+      formalInfo.kind = pcFile
+    elif rawInfo.isDir:
+      formalInfo.kind = pcDir
+    elif rawInfo.isSymlink:
+      raiseGenodeError("symlink reading not implemented")
+    if rawInfo.readable:
+      formalInfo.permissions.incl(fpUserRead)
+    if rawInfo.writeable:
+      formalInfo.permissions.incl(fpUserWrite)
+    if rawInfo.executable:
+      formalInfo.permissions.incl(fpUserExec)
 
   else:
     template checkAndIncludeMode(rawMode, formalMode: untyped) =
@@ -2915,6 +3048,8 @@ proc getFileInfo*(handle: FileHandle): FileInfo {.noNimScript.} =
     if getFileInformationByHandle(realHandle, addr rawInfo) == 0:
       raiseOSError(osLastError())
     rawToFormalFileInfo(rawInfo, "", result)
+  elif defined(genode):
+    raiseGenodeError("getFileInfo for FileHandle not implemented")
   else:
     var rawInfo: Stat
     if fstat(handle, rawInfo) < 0'i32:
@@ -2959,6 +3094,9 @@ proc getFileInfo*(path: string, followSymlink = true): FileInfo {.noNimScript.} 
       raiseOSError(osLastError())
     rawToFormalFileInfo(rawInfo, path, result)
     discard closeHandle(handle)
+  elif defined(genode):
+    var stat = vfs.stat(path)
+    rawToFormalFileInfo(stat, path, result)
   else:
     var rawInfo: Stat
     if followSymlink:
@@ -3008,6 +3146,8 @@ proc getCurrentProcessId*(): int {.noNimScript.} =
     proc GetCurrentProcessId(): DWORD {.stdcall, dynlib: "kernel32",
                                         importc: "GetCurrentProcessId".}
     result = GetCurrentProcessId().int
+  elif defined(genode):
+   result = 1
   else:
     result = getpid()
 
@@ -3016,7 +3156,9 @@ proc getCurrentProcessId*(): int {.noNimScript.} =
 proc setLastModificationTime*(file: string, t: times.Time) {.noNimScript.} =
   ## Sets the `file`'s last modification time. `OSError` is raised in case of
   ## an error.
-  when defined(posix):
+  when defined(genode):
+    discard
+  elif defined(posix):
     let unixt = posix.Time(t.toUnix)
     let micro = convert(Nanoseconds, Microseconds, t.nanosecond)
     var timevals = [Timeval(tv_sec: unixt, tv_usec: micro),

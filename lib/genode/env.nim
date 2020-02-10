@@ -23,7 +23,20 @@ type
   GenodeEnvObj {.importcpp: "Genode::Env", header: "<base/env.h>", pure.} = object
   GenodeEnvPtr = ptr GenodeEnvObj
 
+proc toObj(env: GenodeEnvPtr): GenodeEnvObj {.importcpp: "*#".}
+
 const runtimeEnvSym = "nim_runtime_env"
 
 when not defined(nimscript):
   var runtimeEnv {.importcpp: runtimeEnvSym.}: GenodeEnvPtr
+
+type
+  EntrypointObj {.
+    importcpp: "Genode::Entrypoint",
+    header: "<base/entrypoint.h>",
+    final, pure.} = object
+  Entrypoint* = ptr EntrypointObj
+    ## Opaque Entrypoint object.
+
+proc ep*(env: GenodeEnvPtr): Entrypoint {.
+  importcpp: "#->ep()".}

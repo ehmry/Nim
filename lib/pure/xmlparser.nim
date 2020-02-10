@@ -26,10 +26,10 @@ proc raiseInvalidXml(errors: seq[string]) =
 proc addNode(father, son: XmlNode) =
   if son != nil: add(father, son)
 
-proc parse(x: var XmlParser, errors: var seq[string]): XmlNode {.gcsafe.}
+proc parse(x: var XmlParser, errors: var seq[string]): XmlNode {.gcsafe, tags: [ReadIOEffect].}
 
 proc untilElementEnd(x: var XmlParser, result: XmlNode,
-                     errors: var seq[string]) =
+                     errors: var seq[string]) {.tags: [ReadIOEffect].} =
   while true:
     case x.kind
     of xmlElementEnd:

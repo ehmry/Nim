@@ -35,13 +35,17 @@ type
 
 # text file handling:
 when not defined(nimscript) and not defined(js):
-  var
-    stdin* {.importc: "stdin", header: "<stdio.h>".}: File
-      ## The standard input stream.
-    stdout* {.importc: "stdout", header: "<stdio.h>".}: File
-      ## The standard output stream.
-    stderr* {.importc: "stderr", header: "<stdio.h>".}: File
-      ## The standard error stream.
+  when defined(genode):
+    var
+      stdin*, stdout*, stderr*: File
+  else:
+    var
+      stdin* {.importc: "stdin", header: "<stdio.h>".}: File
+        ## The standard input stream.
+      stdout* {.importc: "stdout", header: "<stdio.h>".}: File
+        ## The standard output stream.
+      stderr* {.importc: "stderr", header: "<stdio.h>".}: File
+        ## The standard error stream.
 
 when defined(useStdoutAsStdmsg):
   template stdmsg*: File = stdout
@@ -105,15 +109,16 @@ else:
     importc: "fseeko", header: "<stdio.h>", tags: [].}
   proc c_ftell(f: File): int64 {.
     importc: "ftello", header: "<stdio.h>", tags: [].}
-proc c_ferror(f: File): cint {.
-  importc: "ferror", header: "<stdio.h>", tags: [].}
-proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize): cint {.
-  importc: "setvbuf", header: "<stdio.h>", tags: [].}
+when not defined(genode):
+  proc c_ferror(f: File): cint {.
+    importc: "ferror", header: "<stdio.h>", tags: [].}
+  proc c_setvbuf(f: File, buf: pointer, mode: cint, size: csize): cint {.
+    importc: "setvbuf", header: "<stdio.h>", tags: [].}
 
-proc c_fprintf(f: File, frmt: cstring): cint {.
-  importc: "fprintf", header: "<stdio.h>", varargs, discardable.}
-proc c_fputc(c: char, f: File): cint {.
-  importc: "fputc", header: "<stdio.h>".}
+  proc c_fprintf(f: File, frmt: cstring): cint {.
+    importc: "fprintf", header: "<stdio.h>", varargs, discardable.}
+  proc c_fputc(c: char, f: File): cint {.
+    importc: "fputc", header: "<stdio.h>".}
 
 # When running nim in android app, stdout goes nowhere, so echo gets ignored
 # To redirect echo to the android logcat, use -d:androidNDK
@@ -138,7 +143,7 @@ when not defined(NimScript):
     errno {.importc, header: "<errno.h>".}: cint ## error variable
 
 proc checkErr(f: File) =
-  when not defined(NimScript):
+  when not defined(NimScript) and not defined(genode):
     if c_ferror(f) != 0:
       let msg = "errno: " & $errno & " `" & $strerror(errno) & "`"
       c_clearerr(f)
@@ -177,16 +182,22 @@ proc readChars*(f: File, a: var openArray[char], start, len: Natural): int {.
 
 proc write*(f: File, c: cstring) {.tags: [WriteIOEffect], benign.} =
   ## Writes a value to the file `f`. May throw an IO exception.
-  discard c_fputs(c, f)
-  checkErr(f)
+  when defined(genode):
+    raiseEIO("writeBuffer not implemented for this platform")
+  else:
+    discard c_fputs(c, f)
+    checkErr(f)
 
 proc writeBuffer*(f: File, buffer: pointer, len: Natural): int {.
   tags: [WriteIOEffect], benign.} =
   ## writes the bytes of buffer pointed to by the parameter `buffer` to the
   ## file `f`. Returns the number of actual written bytes, which may be less
   ## than `len` in case of an error.
-  result = c_fwrite(buffer, 1, len, f)
-  checkErr(f)
+  when defined(genode):
+    raiseEIO("writeBuffer not implemented for this platform")
+  else:
+    result = c_fwrite(buffer, 1, len, f)
+    checkErr(f)
 
 proc writeBytes*(f: File, a: openArray[int8|uint8], start, len: Natural): int {.
   tags: [WriteIOEffect], benign.} =
@@ -342,34 +353,35 @@ proc readLine*(f: File): TaintedString  {.tags: [ReadIOEffect], benign.} =
   result = TaintedString(newStringOfCap(80))
   if not readLine(f, result): raiseEOF()
 
-proc write*(f: File, i: int) {.tags: [WriteIOEffect], benign.} =
-  when sizeof(int) == 8:
-    if c_fprintf(f, "%lld", i) < 0: checkErr(f)
-  else:
-    if c_fprintf(f, "%ld", i) < 0: checkErr(f)
+when not defined(genode):
+  proc write*(f: File, i: int) {.tags: [WriteIOEffect], benign.} =
+    when sizeof(int) == 8:
+      if c_fprintf(f, "%lld", i) < 0: checkErr(f)
+    else:
+      if c_fprintf(f, "%ld", i) < 0: checkErr(f)
 
-proc write*(f: File, i: BiggestInt) {.tags: [WriteIOEffect], benign.} =
-  when sizeof(BiggestInt) == 8:
-    if c_fprintf(f, "%lld", i) < 0: checkErr(f)
-  else:
-    if c_fprintf(f, "%ld", i) < 0: checkErr(f)
+  proc write*(f: File, i: BiggestInt) {.tags: [WriteIOEffect], benign.} =
+    when sizeof(BiggestInt) == 8:
+      if c_fprintf(f, "%lld", i) < 0: checkErr(f)
+    else:
+      if c_fprintf(f, "%ld", i) < 0: checkErr(f)
 
-proc write*(f: File, b: bool) {.tags: [WriteIOEffect], benign.} =
-  if b: write(f, "true")
-  else: write(f, "false")
+  proc write*(f: File, b: bool) {.tags: [WriteIOEffect], benign.} =
+    if b: write(f, "true")
+    else: write(f, "false")
 
-proc write*(f: File, r: float32) {.tags: [WriteIOEffect], benign.} =
-  var buffer: array[65, char]
-  discard writeFloatToBuffer(buffer, r)
-  if c_fprintf(f, "%s", buffer[0].addr) < 0: checkErr(f)
+  proc write*(f: File, r: float32) {.tags: [WriteIOEffect], benign.} =
+    var buffer: array[65, char]
+    discard writeFloatToBuffer(buffer, r)
+    if c_fprintf(f, "%s", buffer[0].addr) < 0: checkErr(f)
 
-proc write*(f: File, r: BiggestFloat) {.tags: [WriteIOEffect], benign.} =
-  var buffer: array[65, char]
-  discard writeFloatToBuffer(buffer, r)
-  if c_fprintf(f, "%s", buffer[0].addr) < 0: checkErr(f)
+  proc write*(f: File, r: BiggestFloat) {.tags: [WriteIOEffect], benign.} =
+    var buffer: array[65, char]
+    discard writeFloatToBuffer(buffer, r)
+    if c_fprintf(f, "%s", buffer[0].addr) < 0: checkErr(f)
 
-proc write*(f: File, c: char) {.tags: [WriteIOEffect], benign.} =
-  discard c_putc(cint(c), f)
+  proc write*(f: File, c: char) {.tags: [WriteIOEffect], benign.} =
+    discard c_putc(cint(c), f)
 
 proc write*(f: File, a: varargs[string, `$`]) {.tags: [WriteIOEffect], benign.} =
   for x in items(a): write(f, x)
@@ -535,10 +547,11 @@ proc open*(f: var File, filename: string,
         return false
     result = true
     f = cast[File](p)
-    if bufSize > 0 and bufSize <= high(cint).int:
-      discard c_setvbuf(f, nil, IOFBF, bufSize.cint)
-    elif bufSize == 0:
-      discard c_setvbuf(f, nil, IONBF, 0)
+    when not defined(genode):
+      if bufSize > 0 and bufSize <= high(cint).int:
+        discard c_setvbuf(f, nil, IOFBF, bufSize.cint)
+      elif bufSize == 0:
+        discard c_setvbuf(f, nil, IONBF, 0)
 
 proc reopen*(f: File, filename: string, mode: FileMode = fmRead): bool {.
   tags: [], benign.} =
@@ -589,12 +602,13 @@ proc getFileSize*(f: File): int64 {.tags: [ReadIOEffect], benign.} =
 
 proc setStdIoUnbuffered*() {.tags: [], benign.} =
   ## Configures `stdin`, `stdout` and `stderr` to be unbuffered.
-  when declared(stdout):
-    discard c_setvbuf(stdout, nil, IONBF, 0)
-  when declared(stderr):
-    discard c_setvbuf(stderr, nil, IONBF, 0)
-  when declared(stdin):
-    discard c_setvbuf(stdin, nil, IONBF, 0)
+  when not defined(genode):
+    when declared(stdout):
+      discard c_setvbuf(stdout, nil, IONBF, 0)
+    when declared(stderr):
+      discard c_setvbuf(stderr, nil, IONBF, 0)
+    when declared(stdin):
+      discard c_setvbuf(stdin, nil, IONBF, 0)
 
 when declared(stdout):
   when defined(windows) and compileOption("threads"):

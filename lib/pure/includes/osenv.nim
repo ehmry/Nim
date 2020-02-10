@@ -5,12 +5,16 @@ when not declared(os) and not declared(ospaths):
 
 from parseutils import skipIgnoreCase
 
-proc c_getenv(env: cstring): cstring {.
-  importc: "getenv", header: "<stdlib.h>".}
-proc c_putenv(env: cstring): cint {.
-  importc: "putenv", header: "<stdlib.h>".}
-proc c_unsetenv(env: cstring): cint {.
-  importc: "unsetenv", header: "<stdlib.h>".}
+when defined(genode) and not defined(posix):
+  import xmltree
+  import genode/config
+else:
+  proc c_getenv(env: cstring): cstring {.
+    importc: "getenv", header: "<stdlib.h>".}
+  proc c_putenv(env: cstring): cint {.
+    importc: "putenv", header: "<stdlib.h>".}
+  proc c_unsetenv(env: cstring): cint {.
+    importc: "unsetenv", header: "<stdlib.h>".}
 
 # Environment handling cannot be put into RTL, because the ``envPairs``
 # iterator depends on ``environment``.
@@ -52,6 +56,11 @@ when defined(windows) and not defined(nimscript):
           e = cast[WideCString](cast[ByteAddress](eend)+2)
           if eend[1].int == 0: break
         discard freeEnvironmentStringsW(env)
+      elif defined(genode):
+        let config = parseConfigRom()
+        for subnode in config.items:
+          if subnode.tag == "env":
+            add(environment, subnode.attr("key") & "=" & subnode.attr("value"))
       else:
         var
           env = getEnvironmentStringsA()
@@ -63,6 +72,15 @@ when defined(windows) and not defined(nimscript):
           e = cast[cstring](cast[ByteAddress](eend)+1)
           if eend[1] == '\0': break
         discard freeEnvironmentStringsA(env)
+      envComputed = true
+
+elif defined(genode):
+  proc getEnvVarsC() =
+    if not envComputed:
+      let config = parseConfigRom()
+      for subnode in config.items:
+        if subnode.tag == "env":
+          add(environment, subnode.attr("key") & "=" & subnode.attr("value"))
       envComputed = true
 
 else:
@@ -106,7 +124,7 @@ proc findEnvVar(key: string): int =
       if startsWith(environment[i], temp): return i
   return -1
 
-proc getEnv*(key: string, default = ""): TaintedString {.tags: [ReadEnvEffect].} =
+proc getEnv*(key: string, default = ""): TaintedString {.tags: [ReadEnvEffect,ReadIOEffect].} =
   ## Returns the value of the `environment variable`:idx: named `key`.
   ##
   ## If the variable does not exist, `""` is returned. To distinguish
@@ -129,11 +147,12 @@ proc getEnv*(key: string, default = ""): TaintedString {.tags: [ReadEnvEffect].}
     if i >= 0:
       return TaintedString(substr(environment[i], find(environment[i], '=')+1))
     else:
-      var env = c_getenv(key)
-      if env == nil: return TaintedString(default)
-      result = TaintedString($env)
+      when defined(c_getenv):
+        var env = c_getenv(key)
+        if env == nil: return TaintedString(default)
+        result = TaintedString($env)
 
-proc existsEnv*(key: string): bool {.tags: [ReadEnvEffect].} =
+proc existsEnv*(key: string): bool {.tags: [ReadEnvEffect,ReadIOEffect].} =
   ## Checks whether the environment variable named `key` exists.
   ## Returns true if it exists, false otherwise.
   ##
@@ -148,8 +167,9 @@ proc existsEnv*(key: string): bool {.tags: [ReadEnvEffect].} =
   when nimvm:
     discard "built into the compiler"
   else:
-    if c_getenv(key) != nil: return true
-    else: return findEnvVar(key) >= 0
+    when defined(c_getenv):
+      if c_getenv(key) != nil: return true
+    return findEnvVar(key) >= 0
 
 proc putEnv*(key, val: string) {.tags: [WriteEnvEffect].} =
   ## Sets the value of the `environment variable`:idx: named `key` to `val`.
@@ -168,22 +188,25 @@ proc putEnv*(key, val: string) {.tags: [WriteEnvEffect].} =
   when nimvm:
     discard "built into the compiler"
   else:
-    var indx = findEnvVar(key)
-    if indx >= 0:
-      environment[indx] = key & '=' & val
+    when not defined(c_putenv):
+      raiseOSError(OSErrorCode(-1), "putEnv not implemented")
     else:
-      add environment, (key & '=' & val)
-      indx = high(environment)
-    when defined(windows) and not defined(nimscript):
-      when useWinUnicode:
-        var k = newWideCString(key)
-        var v = newWideCString(val)
-        if setEnvironmentVariableW(k, v) == 0'i32: raiseOSError(osLastError())
+      var indx = findEnvVar(key)
+      if indx >= 0:
+        environment[indx] = key & '=' & val
       else:
-        if setEnvironmentVariableA(key, val) == 0'i32: raiseOSError(osLastError())
-    else:
-      if c_putenv(environment[indx]) != 0'i32:
-        raiseOSError(osLastError())
+        add environment, (key & '=' & val)
+        indx = high(environment)
+      when defined(windows) and not defined(nimscript):
+        when useWinUnicode:
+          var k = newWideCString(key)
+          var v = newWideCString(val)
+          if setEnvironmentVariableW(k, v) == 0'i32: raiseOSError(osLastError())
+        else:
+          if setEnvironmentVariableA(key, val) == 0'i32: raiseOSError(osLastError())
+      else:
+        if c_putenv(environment[indx]) != 0'i32:
+          raiseOSError(osLastError())
 
 proc delEnv*(key: string) {.tags: [WriteEnvEffect].} =
   ## Deletes the `environment variable`:idx: named `key`.
@@ -197,20 +220,23 @@ proc delEnv*(key: string) {.tags: [WriteEnvEffect].} =
   when nimvm:
     discard "built into the compiler"
   else:
-    var indx = findEnvVar(key)
-    if indx < 0: return # Do nothing if the env var is not already set
-    when defined(windows) and not defined(nimscript):
-      when useWinUnicode:
-        var k = newWideCString(key)
-        if setEnvironmentVariableW(k, nil) == 0'i32: raiseOSError(osLastError())
-      else:
-        if setEnvironmentVariableA(key, nil) == 0'i32: raiseOSError(osLastError())
+    when not defined(c_unsetenv):
+      raiseOSError(OSErrorCode(-1), "delEnv not implemented")
     else:
-      if c_unsetenv(key) != 0'i32:
-        raiseOSError(osLastError())
-    environment.delete(indx)
+      var indx = findEnvVar(key)
+      if indx < 0: return # Do nothing if the env var is not already set
+      when defined(windows) and not defined(nimscript):
+        when useWinUnicode:
+          var k = newWideCString(key)
+          if setEnvironmentVariableW(k, nil) == 0'i32: raiseOSError(osLastError())
+        else:
+          if setEnvironmentVariableA(key, nil) == 0'i32: raiseOSError(osLastError())
+      else:
+        if c_unsetenv(key) != 0'i32:
+          raiseOSError(osLastError())
+      environment.delete(indx)
 
-iterator envPairs*(): tuple[key, value: TaintedString] {.tags: [ReadEnvEffect].} =
+iterator envPairs*(): tuple[key, value: TaintedString] {.tags: [ReadEnvEffect,ReadIOEffect].} =
   ## Iterate over all `environments variables`:idx:.
   ##
   ## In the first component of the tuple is the name of the current variable stored,

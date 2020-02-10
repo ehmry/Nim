@@ -299,7 +299,7 @@ proc getValue(t: StringTableRef, flags: set[FormatFlag], key: string): string =
   # hm difficult: assume safety in taint mode here. XXX This is dangerous!
   when defined(js):
     result = ""
-  else:
+  elif not defined(genode):
     if useEnvironment in flags: result = os.getEnv(key).string
     else: result = ""
   if result.len == 0:
