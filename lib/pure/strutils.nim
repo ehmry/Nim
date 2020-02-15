@@ -2288,7 +2288,7 @@ proc validIdentifier*(s: string): bool {.noSideEffect,
 
 
 # floating point formatting:
-when not defined(js):
+when not defined(js) and not defined(genode):
   proc c_sprintf(buf, frmt: cstring): cint {.header: "<stdio.h>",
                                      importc: "sprintf", varargs, noSideEffect.}
 
@@ -2339,6 +2339,8 @@ proc formatBiggestFloat*(f: BiggestFloat, format: FloatFormatMode = ffDefault,
       # Depending on the locale either dot or comma is produced,
       # but nothing else is possible:
       if result[i] in {'.', ','}: result[i] = decimalsep
+  elif defined(genode):
+    raise newException(Defect, "formatBiggestFloat not implemented for this platform")
   else:
     const floatFormatToChar: array[FloatFormatMode, char] = ['g', 'f', 'e']
     var
