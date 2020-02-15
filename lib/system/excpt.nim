@@ -24,8 +24,13 @@ when defined(windows):
   proc GetLastError(): int32 {.header: "<windows.h>", nodecl.}
   const ERROR_BAD_EXE_FORMAT = 193
 
-when not defined(windows) or not defined(guiapp):
+elif defined(genode):
+  proc writeToStdErr(msg: cstring) =
+    {.emit: "Genode::error(Genode::Cstring(`msg`));".}
+
+elif not defined(guiapp):
   proc writeToStdErr(msg: cstring) = rawWrite(cstderr, msg)
+
 else:
   proc MessageBoxA(hWnd: pointer, lpText, lpCaption: cstring, uType: int): int32 {.
     header: "<windows.h>", nodecl.}

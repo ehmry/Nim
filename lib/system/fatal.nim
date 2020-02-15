@@ -37,8 +37,8 @@ elif (defined(nimQuirky) or defined(nimPanics)) and not defined(nimscript):
     add(buf, arg)
     add(buf, " [")
     add(buf, name exceptn)
-    add(buf, "]\n")
-    cstderr.rawWrite buf
+    add(buf, "]")
+    writeToStdErr buf
     quit 1
 
   proc sysFatal(exceptn: typedesc, message: string) {.inline, noreturn.} =

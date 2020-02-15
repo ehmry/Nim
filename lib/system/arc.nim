@@ -159,12 +159,12 @@ proc nimRawDispose(p: pointer) {.compilerRtl.} =
       cprintf("[Freed] %p\n", p -! sizeof(RefHeader))
     when defined(nimOwnedEnabled):
       if head(p).rc >= rcIncrement:
-        cstderr.rawWrite "[FATAL] dangling references exist\n"
+        writeToStdErr "[FATAL] dangling references exist\n"
         quit 1
 
     when defined(gcOrc) and defined(nimArcDebug):
       if (head(p).rc and 0b100) != 0:
-        cstderr.rawWrite "[FATAL] cycle root freed\n"
+        writeToStdErr "[FATAL] cycle root freed\n"
         quit 1
 
     when defined(nimArcDebug):
@@ -185,12 +185,12 @@ proc nimDestroyAndDispose(p: pointer) {.compilerRtl, raises: [].} =
   let d = cast[ptr PNimTypeV2](p)[].destructor
   if d != nil: cast[DestructorProc](d)(p)
   when false:
-    cstderr.rawWrite cast[ptr PNimTypeV2](p)[].name
-    cstderr.rawWrite "\n"
+    writeToStdErr cast[ptr PNimTypeV2](p)[].name
+    writeToStdErr "\n"
     if d == nil:
-      cstderr.rawWrite "bah, nil\n"
+      writeToStdErr "bah, nil\n"
     else:
-      cstderr.rawWrite "has destructor!\n"
+      writeToStdErr "has destructor!\n"
   nimRawDispose(p)
 
 when defined(gcOrc):
