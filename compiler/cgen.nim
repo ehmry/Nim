@@ -1362,26 +1362,24 @@ proc genMainProc(m: BModule) =
 
     GenodeNimMain =
       "extern Genode::Env *nim_runtime_env;$N" &
-      "extern void nim_component_construct(Genode::Env*);$N$N" &
+      "extern \"C\" void nim_component_construct(Genode::Env*);$N$N" &
       NimMainBody
 
     ComponentConstruct =
-      "void Libc::Component::construct(Libc::Env &env) {$N" &
+      "void Component::construct(Genode::Env &env) {$N" &
       "\t// Set Env used during runtime initialization$N" &
       "\tnim_runtime_env = &env;$N" &
-      "\tLibc::with_libc([&] () {$N\t" &
       "\t// Initialize runtime and globals$N" &
       MainProcs &
       "\t// Call application construct$N" &
-      "\t\tnim_component_construct(&env);$N" &
-      "\t});$N" &
+      "\tnim_component_construct(&env);$N" &
       "}$N$N"
 
   if m.config.target.targetOS == osWindows and
       m.config.globalOptions * {optGenGuiApp, optGenDynLib} != {}:
     m.includeHeader("<windows.h>")
   elif m.config.target.targetOS == osGenode:
-    m.includeHeader("<libc/component.h>")
+    m.includeHeader("<base/component.h>")
 
   let initStackBottomCall =
     if m.config.target.targetOS == osStandalone or m.config.selectedGC == gcNone: "".rope
