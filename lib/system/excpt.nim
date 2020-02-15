@@ -17,8 +17,11 @@ var
     ## instead of `stdmsg.write` when printing stacktrace.
     ## Unstable API.
 
-when not defined(windows) or not defined(guiapp):
-  proc writeToStdErr(msg: cstring) = rawWrite(cstderr, msg)
+when defined(genode):
+  proc writeToStdErr(msg: cstring) =
+    {.emit: "Genode::error(Genode::Cstring(`msg`));".}
+elif not defined(windows) or not defined(guiapp):
+  proc writeToStdErr*(msg: cstring) = rawWrite(cstderr, msg)
 
 else:
   proc MessageBoxA(hWnd: pointer, lpText, lpCaption: cstring, uType: int): int32 {.

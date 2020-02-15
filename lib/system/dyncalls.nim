@@ -19,11 +19,11 @@ const
 
 proc nimLoadLibraryError(path: string) =
   # carefully written to avoid memory allocation:
-  cstderr.rawWrite("could not load: ")
-  cstderr.rawWrite(path)
-  cstderr.rawWrite("\n")
+  writeToStdErr("could not load: ")
+  writeToStdErr(path)
+  writeToStdErr("\n")
   when not defined(nimDebugDlOpen) and not defined(windows):
-    cstderr.rawWrite("compile with -d:nimDebugDlOpen for more information\n")
+    writeToStdErr("compile with -d:nimDebugDlOpen for more information\n")
   when defined(windows) and defined(guiapp):
     # Because console output is not shown in GUI apps, display error as message box:
     const prefix = "could not load: "
@@ -35,9 +35,9 @@ proc nimLoadLibraryError(path: string) =
 
 proc procAddrError(name: cstring) {.compilerproc, nonReloadable, hcrInline.} =
   # carefully written to avoid memory allocation:
-  cstderr.rawWrite("could not import: ")
-  cstderr.rawWrite(name)
-  cstderr.rawWrite("\n")
+  writeToStdErr("could not import: ")
+  writeToStdErr(name)
+  writeToStdErr("\n")
   quit(1)
 
 # this code was inspired from Lua's source code:
@@ -79,8 +79,8 @@ when defined(posix):
     when defined(nimDebugDlOpen):
       let error = dlerror()
       if error != nil:
-        cstderr.rawWrite(error)
-        cstderr.rawWrite("\n")
+        writeToStdErr(error)
+        writeToStdErr("\n")
 
   proc nimGetProcAddr(lib: LibHandle, name: cstring): ProcAddr =
     result = dlsym(lib, name)
@@ -165,20 +165,20 @@ elif defined(genode):
 
 elif defined(nintendoswitch):
   proc nimUnloadLibrary(lib: LibHandle) =
-    cstderr.rawWrite("nimUnLoadLibrary not implemented")
-    cstderr.rawWrite("\n")
+    writeToStdErr("nimUnLoadLibrary not implemented")
+    writeToStdErr("\n")
     quit(1)
 
   proc nimLoadLibrary(path: string): LibHandle =
-    cstderr.rawWrite("nimLoadLibrary not implemented")
-    cstderr.rawWrite("\n")
+    writeToStdErr("nimLoadLibrary not implemented")
+    writeToStdErr("\n")
     quit(1)
 
 
   proc nimGetProcAddr(lib: LibHandle, name: cstring): ProcAddr =
-    cstderr.rawWrite("nimGetProAddr not implemented")
-    cstderr.rawWrite(name)
-    cstderr.rawWrite("\n")
+    writeToStdErr("nimGetProAddr not implemented")
+    writeToStdErr(name)
+    writeToStdErr("\n")
     quit(1)
 
 else:

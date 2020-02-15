@@ -2084,9 +2084,9 @@ else:
 template sysAssert(cond: bool, msg: string) =
   when defined(useSysAssert):
     if not cond:
-      cstderr.rawWrite "[SYSASSERT] "
-      cstderr.rawWrite msg
-      cstderr.rawWrite "\n"
+      writeToStdErr "[SYSASSERT] "
+      writeToStdErr msg
+      writeToStdErr "\n"
       quit 1
 
 const hasAlloc = (hostOS != "standalone" or not defined(nogc)) and not defined(nimscript)
@@ -3898,8 +3898,8 @@ proc quit*(errormsg: string, errorcode = QuitFailure) {.noreturn.} =
     when nimvm:
       echo errormsg
     else:
-      cstderr.rawWrite(errormsg)
-      cstderr.rawWrite("\n")
+      writeToStdErr(errormsg)
+      writeToStdErr("\n")
   quit(errorcode)
 
 {.pop.} # checks

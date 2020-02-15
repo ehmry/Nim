@@ -76,7 +76,7 @@ proc nimRawDispose(p: pointer) {.compilerRtl.} =
     else:
       let hasDanglingRefs = head(p).rc != 0
     if hasDanglingRefs:
-      cstderr.rawWrite "[FATAL] dangling references exist\n"
+      writeToStdErr "[FATAL] dangling references exist\n"
       quit 1
     when defined(useMalloc):
       c_free(p -! sizeof(RefHeader))
@@ -88,7 +88,7 @@ proc nimRawDispose(p: pointer) {.compilerRtl.} =
       else:
         dec allocs
     else:
-      cstderr.rawWrite "[FATAL] unpaired dealloc\n"
+      writeToStdErr "[FATAL] unpaired dealloc\n"
       quit 1
 
 template dispose*[T](x: owned(ref T)) = nimRawDispose(cast[pointer](x))
@@ -98,12 +98,12 @@ proc nimDestroyAndDispose(p: pointer) {.compilerRtl.} =
   let d = cast[ptr PNimType](p)[].destructor
   if d != nil: cast[DestructorProc](d)(p)
   when false:
-    cstderr.rawWrite cast[ptr PNimType](p)[].name
-    cstderr.rawWrite "\n"
+    writeToStdErr cast[ptr PNimType](p)[].name
+    writeToStdErr "\n"
     if d == nil:
-      cstderr.rawWrite "bah, nil\n"
+      writeToStdErr "bah, nil\n"
     else:
-      cstderr.rawWrite "has destructor!\n"
+      writeToStdErr "has destructor!\n"
   nimRawDispose(p)
 
 proc isObj(obj: PNimType, subclass: cstring): bool {.compilerproc.} =

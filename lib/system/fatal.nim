@@ -22,7 +22,7 @@ elif defined(nimQuirky) and not defined(nimscript):
     add(buf, " [")
     add(buf, name exceptn)
     add(buf, "]")
-    cstderr.rawWrite buf
+    writeToStdErr buf
     quit 1
 
   proc sysFatal(exceptn: typedesc, message: string) {.inline, noreturn.} =
