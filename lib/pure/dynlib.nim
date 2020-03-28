@@ -150,6 +150,29 @@ elif defined(nintendoswitch):
   proc symAddr(lib: LibHandle, name: cstring): pointer =
     raise newException(OSError, "symAddr not implemented on Nintendo Switch!")
 
+elif defined(genode):
+  #
+  # =========================================================================
+  # Not implemented for Genode without POSIX. Raise an error if called.
+  # =========================================================================
+  #
+
+  proc dlclose(lib: LibHandle) =
+    raise newException(OSError, "dlclose not implemented on Nintendo Switch!")
+  proc dlopen(path: cstring, mode: int): LibHandle =
+    raise newException(OSError, "dlopen not implemented on Nintendo Switch!")
+  proc dlsym(lib: LibHandle, name: cstring): pointer =
+    raise newException(OSError, "dlsym not implemented on Nintendo Switch!")
+  proc loadLib(path: string, global_symbols = false): LibHandle =
+    raise newException(OSError, "loadLib not implemented on Nintendo Switch!")
+  proc loadLib(): LibHandle =
+    raise newException(OSError, "loadLib not implemented on Nintendo Switch!")
+  proc unloadLib(lib: LibHandle) =
+    raise newException(OSError, "unloadLib not implemented on Nintendo Switch!")
+  proc symAddr(lib: LibHandle, name: cstring): pointer =
+    raise newException(OSError, "symAddr not implemented on Nintendo Switch!")
+
+
 elif defined(windows) or defined(dos):
   #
   # =======================================================================
