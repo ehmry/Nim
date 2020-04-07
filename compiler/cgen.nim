@@ -14,7 +14,7 @@ import
   nversion, nimsets, msgs, bitsets, idents, types,
   ccgutils, os, ropes, math, passes, wordrecg, treetab, cgmeth,
   rodutils, renderer, cgendata, ccgmerge, aliases,
-  lowerings, tables, sets, ndi, lineinfos, pathutils, transf,
+  lowerings, tables, sets, ndi, lineinfos, pathutils, transf
   injectdestructors
 
 when not defined(leanCompiler):
@@ -1413,10 +1413,20 @@ proc genMainProc(m: BModule) =
 
     GenodeNimMain =
       "extern Genode::Env *nim_runtime_env;$N" &
-      "extern void nim_component_construct(Genode::Env*);$N$N" &
+      "extern \"C\" void nim_component_construct(Genode::Env*);$N$N" &
       NimMainBody
 
-    ComponentConstruct =
+    GenodeComponentConstruct =
+      "void Component::construct(Genode::Env &env) {$N" &
+      "\t// Set Env used during runtime initialization$N" &
+      "\tnim_runtime_env = &env;$N" &
+      "\t// Initialize runtime and globals$N" &
+      MainProcs &
+      "\t// Call application construct$N" &
+      "\tnim_component_construct(&env);$N" &
+      "}$N$N"
+
+    GenodePosixComponentConstruct =
       "void Libc::Component::construct(Libc::Env &env) {$N" &
       "\t// Set Env used during runtime initialization$N" &
       "\tnim_runtime_env = &env;$N" &
@@ -1432,7 +1442,10 @@ proc genMainProc(m: BModule) =
       m.config.globalOptions * {optGenGuiApp, optGenDynLib} != {}:
     m.includeHeader("<windows.h>")
   elif m.config.target.targetOS == osGenode:
-    m.includeHeader("<libc/component.h>")
+    if m.config.symbols.hasKey "posix":
+      m.includeHeader("<libc/component.h>")
+    else:
+      m.includeHeader("<base/component.h>")
 
   let initStackBottomCall =
     if m.config.target.targetOS == osStandalone or m.config.selectedGC == gcNone: "".rope
@@ -1481,8 +1494,10 @@ proc genMainProc(m: BModule) =
         const otherMain = WinCDllMain
         appcg(m, m.s[cfsProcs], otherMain, [])
     elif m.config.target.targetOS == osGenode:
-      const otherMain = ComponentConstruct
-      appcg(m, m.s[cfsProcs], otherMain, [])
+      if m.config.symbols.hasKey "posix":
+        appcg(m, m.s[cfsProcs], GenodePosixComponentConstruct, [])
+      else:
+        appcg(m, m.s[cfsProcs], GenodeComponentConstruct, [])
     elif optGenDynLib in m.config.globalOptions:
       const otherMain = PosixCDllMain
       appcg(m, m.s[cfsProcs], otherMain, [])
