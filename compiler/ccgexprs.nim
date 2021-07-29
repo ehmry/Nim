@@ -58,7 +58,7 @@ proc genLiteral(p: BProc, n: PNode, ty: PType): Rope =
     of tyInt64: result = int64Literal(n.intVal)
     of tyUInt64: result = uint64Literal(uint64(n.intVal))
     else:
-      result = "(($1) $2)" % [getTypeDesc(p.module,
+      result = "(($1)($2))" % [getTypeDesc(p.module,
           ty), intLiteral(n.intVal)]
   of nkNilLit:
     let k = if ty == nil: tyPointer else: skipTypes(ty, abstractVarRange).kind
