@@ -239,6 +239,33 @@ compiler tcc:
     cppXsupport: "",
     props: {hasSwitchRange, hasComputedGoto, hasGnuAsm})
 
+# Plan 9 C Compiler
+compiler pcc:
+  # see http://fqa.9front.org/appendixl.html
+  result = (
+    name: "pcc",
+    objExt: "o", # machine-specific
+    optSpeed: "",
+    optSize: "",
+    compilerExe: "", # machine-specific
+    cppCompiler: "",
+    compileTmpl: "-p -c $ccenvflags $options $include -o $objfile $file",
+    buildGui: "",
+    buildDll: "", # not supported
+    buildLib: "", # not supported
+    linkerExe: "", # machine-specific
+    linkTmpl: "-o $exefile $options $objfiles",
+    includeCmd: " -I",
+    linkDirCmd: "", # not supported
+    linkLibCmd: "", # not supported
+    debug: "",
+    pic: "",
+    asmStmtFrmt: "__asm{$n$1$n}$n", # TODO: no inline assembly.
+    structStmtFmt: "$1 $2",
+    produceAsm: "",
+    cppXsupport: "",
+    props: {})
+
 # Your C Compiler
 compiler envcc:
   result = (
@@ -277,7 +304,8 @@ const
     envcc(),
     icl(),
     icc(),
-    clangcl()]
+    clangcl(),
+    pcc()]
 
   hExt* = ".h"
 

@@ -104,6 +104,8 @@ __AVR__
 #  define N_INLINE(rettype, name) inline rettype name
 #elif defined(__WATCOMC__)
 #  define N_INLINE(rettype, name) __inline rettype name
+#elif defined(NIM_PLAN9)
+#  define N_INLINE(rettype, name) rettype name
 #else /* others are less picky: */
 #  define N_INLINE(rettype, name) rettype __inline name
 #endif
@@ -139,6 +141,7 @@ __AVR__
        defined __SUNPRO_C || \
        defined __xlC__
 #  define NIM_THREADVAR __thread
+#elif defined NIM_PLAN9
 #else
 #  error "Cannot define NIM_THREADVAR"
 #endif
@@ -191,7 +194,11 @@ __AVR__
 #  define N_LIB_EXPORT_VAR  __declspec(dllexport)
 #  define N_LIB_IMPORT  extern __declspec(dllimport)
 #else
-#  define N_LIB_PRIVATE __attribute__((visibility("hidden")))
+#  if defined(NIM_PLAN9)
+#    define N_LIB_PRIVATE
+#  else
+#    define N_LIB_PRIVATE __attribute__((visibility("hidden")))
+#  endif
 #  if defined(__GNUC__)
 #    define N_CDECL(rettype, name) rettype name
 #    define N_STDCALL(rettype, name) rettype name
@@ -261,8 +268,13 @@ __AVR__
 
 #define COMMA ,
 
+#ifdef NIM_PLAN9
+#include <u.h>
+#include <libc.h>
+#else
 #include <limits.h>
 #include <stddef.h>
+#endif
 
 // define NIM_STATIC_ASSERT
 // example use case: CT sizeof for importc types verification
@@ -322,8 +334,15 @@ typedef unsigned char NIM_BOOL; // best effort
 
 NIM_STATIC_ASSERT(sizeof(NIM_BOOL) == 1, ""); // check whether really needed
 
-#define NIM_TRUE true
-#define NIM_FALSE false
+#if defined(NIM_PLAN9)
+#  define size_t usize
+#  define ptrdiff_t intptr
+#  define NIM_TRUE 1
+#  define NIM_FALSE 0
+#else
+#  define NIM_TRUE true
+#  define NIM_FALSE false
+#endif
 
 #ifdef __cplusplus
 #  if __cplusplus >= 201103L
@@ -337,6 +356,8 @@ NIM_STATIC_ASSERT(sizeof(NIM_BOOL) == 1, ""); // check whether really needed
 #    // However, `0` causes other issues, see #13798
 #    define NIM_NIL 0
 #  endif
+#elif defined(NIM_PLAN9)
+#  define NIM_NIL nil // <u.h>
 #else
 #  include <stdbool.h>
 #  define NIM_NIL ((void*)0) /* C's NULL is fucked up in some C compilers, so
@@ -548,6 +569,9 @@ NIM_STATIC_ASSERT(sizeof(NI) == sizeof(void*) && NIM_INTBITS == sizeof(NI)*8, ""
 #if defined(_MSC_VER)
 #  define NIM_ALIGN(x)  __declspec(align(x))
 #  define NIM_ALIGNOF(x) __alignof(x)
+#elif defined(NIM_PLAN9)
+#  define NIM_ALIGN(x)
+#  define NIM_ALIGNOF(x) sizeof(x)
 #else
 #  define NIM_ALIGN(x)  __attribute__((aligned(x)))
 #  define NIM_ALIGNOF(x) __alignof__(x)

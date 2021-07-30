@@ -799,6 +799,8 @@ proc cgsym(m: BModule, name: string): Rope =
     result.addActualSuffixForHCR(m.module, sym)
 
 proc generateHeaders(m: BModule) =
+  if m.config.target.targetOS == osPlan9:
+    m.s[cfsHeaders].add("\L#define NIM_PLAN9")
   m.s[cfsHeaders].add("\L#include \"nimbase.h\"\L")
 
   for it in m.headerFiles:
