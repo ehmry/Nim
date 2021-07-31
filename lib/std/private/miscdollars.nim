@@ -4,12 +4,19 @@ template toLocation*(result: var string, file: string | cstring, line: int, col:
   # it can be done in a single place.
   result.add file
   if line > 0:
-    result.add "("
+    when defined(plan9):
+      result.add ':'
+    else:
+      result.add "("
     # simplify this after moving moving `include strmantle` above import assertions`
     when declared(addInt): result.addInt line
     else: result.add $line
     if col > 0:
-      result.add ", "
+      when defined(plan9):
+        result.add ':'
+      else:
+        result.add ", "
       when declared(addInt): result.addInt col
       else: result.add $col
-    result.add ")"
+    when not defined(plan9):
+      result.add ")"
