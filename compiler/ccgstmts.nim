@@ -1335,7 +1335,8 @@ proc genTrySetjmp(p: BProc, t: PNode, d: var TLoc) =
   let quirkyExceptions = p.config.exc == excQuirky or
       (t.kind == nkHiddenTryStmt and sfSystemModule in p.module.module.flags)
   if not quirkyExceptions:
-    p.module.includeHeader("<setjmp.h>")
+    if p.config.target.targetOS != osPlan9:
+      p.module.includeHeader("<setjmp.h>")
   else:
     p.flags.incl noSafePoints
   genLineDir(p, t)

@@ -1125,14 +1125,19 @@ when hasThreadSupport:
 else:
   {.pragma: rtlThreadVar.}
 
-const
-  QuitSuccess* = 0
-    ## is the value that should be passed to `quit <#quit,int>`_ to indicate
-    ## success.
+when defined(plan9):
+  const
+    QuitSuccess* = ""
+    QuitFailure* = "unspecified failure"
+else:
+  const
+    QuitSuccess* = 0
+      ## is the value that should be passed to `quit <#quit,int>`_ to indicate
+      ## success.
 
-  QuitFailure* = 1
-    ## is the value that should be passed to `quit <#quit,int>`_ to indicate
-    ## failure.
+    QuitFailure* = 1
+      ## is the value that should be passed to `quit <#quit,int>`_ to indicate
+      ## failure.
 
 when not defined(js) and hostOS != "standalone":
   var programResult* {.compilerproc, exportc: "nim_program_result".}: int
@@ -1146,6 +1151,8 @@ proc align(address, alignment: int): int =
     result = address
   else:
     result = (address + (alignment - 1)) and not (alignment - 1)
+
+proc quit*(errormsg: string, errorcode = QuitFailure) {.noreturn.}
 
 when defined(nimdoc):
   proc quit*(errorcode: int = QuitSuccess) {.magic: "Exit", noreturn.}
@@ -1185,6 +1192,16 @@ elif defined(genode):
 elif defined(js) and defined(nodejs) and not defined(nimscript):
   proc quit*(errorcode: int = QuitSuccess) {.magic: "Exit",
     importc: "process.exit", noreturn.}
+
+elif defined(plan9):
+  proc exits(msg: cstring) {.importc, noreturn.}
+    # TODO: {.magic: "Exit".} breaks the compiler.
+
+  proc quit*(errorcode: int) {.noreturn.} =
+    if errorcode == 0: exits("")
+    else: exits("QuitFailure")
+
+  proc quit*() {.noreturn.} = exits("")
 
 else:
   proc quit*(errorcode: int = QuitSuccess) {.
@@ -1459,15 +1476,16 @@ proc toBiggestInt*(f: BiggestFloat): BiggestInt {.noSideEffect.} =
   ## Same as `toInt <#toInt,float>`_ but for ``BiggestFloat`` to ``BiggestInt``.
   if f >= 0: BiggestInt(f+0.5) else: BiggestInt(f-0.5)
 
-proc addQuitProc*(quitProc: proc() {.noconv.}) {.
-  importc: "atexit", header: "<stdlib.h>", deprecated: "use exitprocs.addExitProc".}
-  ## Adds/registers a quit procedure.
-  ##
-  ## Each call to ``addQuitProc`` registers another quit procedure. Up to 30
-  ## procedures can be registered. They are executed on a last-in, first-out
-  ## basis (that is, the last function registered is the first to be executed).
-  ## ``addQuitProc`` raises an EOutOfIndex exception if ``quitProc`` cannot be
-  ## registered.
+when not defined(plan9):
+  proc addQuitProc*(quitProc: proc() {.noconv.}) {.
+    importc: "atexit", header: "<stdlib.h>", deprecated: "use exitprocs.addExitProc".}
+    ## Adds/registers a quit procedure.
+    ##
+    ## Each call to ``addQuitProc`` registers another quit procedure. Up to 30
+    ## procedures can be registered. They are executed on a last-in, first-out
+    ## basis (that is, the last function registered is the first to be executed).
+    ## ``addQuitProc`` raises an EOutOfIndex exception if ``quitProc`` cannot be
+    ## registered.
 
 # Support for addQuitProc() is done by Ansi C's facilities here.
 # In case of an unhandled exception the exit handlers should
@@ -2423,15 +2441,23 @@ when defined(js) or defined(nimscript):
 
 proc quit*(errormsg: string, errorcode = QuitFailure) {.noreturn.} =
   ## A shorthand for ``echo(errormsg); quit(errorcode)``.
-  when defined(nimscript) or defined(js) or (hostOS == "standalone"):
-    echo errormsg
+  when defined(plan9):
+    const ERRMAX = 128
+    if errormsg.len < ERRMAX:
+      exits(errormsg)
+    else:
+      echo(errormsg)
+      exits(errorcode)
   else:
-    when nimvm:
+    when defined(nimscript) or defined(js) or (hostOS == "standalone"):
       echo errormsg
     else:
-      cstderr.rawWrite(errormsg)
-      cstderr.rawWrite("\n")
-  quit(errorcode)
+      when nimvm:
+        echo errormsg
+      else:
+        cstderr.rawWrite(errormsg)
+        cstderr.rawWrite("\n")
+    quit(errorcode)
 
 {.pop.} # checks: off
 {.pop.} # hints: off
@@ -2935,8 +2961,12 @@ proc procCall*(x: untyped) {.magic: "ProcCall", compileTime.} =
 proc `==`*(x, y: cstring): bool {.magic: "EqCString", noSideEffect,
                                    inline.} =
   ## Checks for equality between two `cstring` variables.
+  when defined(plan9):
+    {.pragma: stringh.}
+  else:
+    {.pragma: stringh, header: "<string.h>".}
   proc strcmp(a, b: cstring): cint {.noSideEffect,
-    importc, header: "<string.h>".}
+    importc, stringh.}
   if pointer(x) == pointer(y): result = true
   elif x.isNil or y.isNil: result = false
   else: result = strcmp(x, y) == 0

@@ -285,7 +285,7 @@ else:
   proc setNonBlocking(fd: cint) {.inline.} =
     setBlocking(fd.SocketHandle, false)
 
-  when not defined(windows):
+  when not defined(windows) and not defined(plan9):
     import posix
 
     template setKey(s, pident, pevents, pparam, pdata: untyped) =
@@ -337,5 +337,7 @@ else:
     include ioselects/ioselectors_select
   elif defined(freertos) or defined(lwip):
     include ioselects/ioselectors_select
+  elif defined(plan9):
+    discard
   else:
     include ioselects/ioselectors_poll

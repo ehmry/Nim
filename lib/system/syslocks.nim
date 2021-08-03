@@ -95,6 +95,46 @@ elif defined(genode):
   proc signalSysCond(cond: var SysCond) {.
     noSideEffect, importcpp.}
 
+elif defined(plan9):
+  # http://man.9front.org/2/lock
+  {.pragma: libc, importc.}
+
+  type
+    QLock {.libc, pure, final.} = object
+      discard
+    Rendez {.libc, pure, final.} = object
+      l: ptr QLock
+    SysLock = QLock
+    SysCond = Rendez
+
+  proc qlock(L: ptr QLock) {.libc.}
+  proc canlock(L: ptr QLock): cint {.libc.}
+  proc qunlock(L: ptr QLock) {.libc.}
+
+  proc initSysLock(L: var SysLock) = discard
+  proc deinitSys(L: var SysLock) = discard
+
+  proc acquireSys(L: var SysLock) = qlock(addr L)
+  proc tryAcquireSys(L: var SysLock): bool =
+    if canlock(addr L) != 0:
+      result = true
+      qlock(addr L)
+  proc releaseSys(L: var SysLock) = qunlock(addr L)
+
+  proc initSysCond(L: var SysCond) = discard
+  proc deinitSysCond(L: var SysCond) = discard
+
+  proc rsleep(r: ptr Rendez) {.libc.}
+  proc rwakeup(r: ptr Rendez): cint {.libc.}
+
+  proc waitSysCond(cond: var SysCond, lock: var SysLock) =
+    assert(cond.l.isNil or cond.l == lock.addr)
+    cond.l = lock.addr
+    rsleep(addr cond)
+
+  proc signalSysCond(cond: var SysCond) =
+    discard rwakeup(addr cond)
+
 else:
   type
     SysLockObj {.importc: "pthread_mutex_t", pure, final,

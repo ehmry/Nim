@@ -248,6 +248,29 @@ elif defined(windows):
 
   proc localtime(a1: var CTime): ptr Tm {.importc, header: "<time.h>", sideEffect.}
 
+elif defined(plan9):
+  import plan9
+  {.pragma: libc, importc.}
+
+  type
+    Tm {.importc, final, pure.} = object
+      nsec, sec, min, hour, mday, mon, year, wday, yday: int
+      zone: cstring
+      tzoff: int
+      tz: Tzone
+
+    Tzone {.importc, final, pure.} = object
+
+  proc tmnow(tm: ptr Tm; tz: ptr Tzone): ptr Tm {.libc.}
+    ## http://man.9front.org/2/tmdate
+
+  proc tmtime(tm: ptr Tm; abs: cvlong; tz: ptr Tzone): ptr Tm {.libc.}
+    ## http://man.9front.org/2/tmdate
+
+  proc tzload(name: cstring): ptr Tzone {.libc.}
+    ## Result is cached and should not be freed.
+    ## http://man.9front.org/2/tmdate
+
 type
   Month* = enum ## Represents a month. Note that the enum starts at ``1``,
                 ## so ``ord(month)`` will give the month number in the
@@ -907,6 +930,10 @@ proc getTime*(): Time {.tags: [TimeEffect], benign.} =
     var f {.noinit.}: FILETIME
     getSystemTimeAsFileTime(f)
     result = fromWinTime(rdFileTime(f))
+  elif defined(plan9):
+    let ns = nsec()
+    result.seconds = ns div 1_000_000_000
+    result.nanosecond = ns mod 1_000_000_000
 
 proc `-`*(a, b: Time): Duration {.operator, extern: "ntDiffTime".} =
   ## Computes the duration between two points in time.
@@ -1213,6 +1240,22 @@ when defined(js):
     result.utcOffset = localDate.getTimezoneOffset() * secondsInMin
     result.time = adjTime + initDuration(seconds = result.utcOffset)
     result.isDst = false
+
+elif defined(plan9):
+  import plan9
+
+  proc localZonedTimeFromTime(time: Time): ZonedTime {.benign.} =
+    let tz = tzload("local")
+    doAssert(not tz.isNil)
+    var t: Tm
+    let tm = tmtime(addr t, cvlong time.seconds, tz)
+    doAssert(not tm.isNil)
+    result.time = time
+    result.utcOffset = tm.tzoff
+
+  proc localZonedTimeFromAdjTime(adjTime: Time): ZonedTime {.benign.} =
+    ## TODO
+    localZonedTimeFromTime(adjTime)
 
 else:
   proc toAdjUnix(tm: Tm): int64 =
@@ -2580,6 +2623,8 @@ proc epochTime*(): float {.tags: [TimeEffect].} =
     var secs = i64 div rateDiff
     var subsecs = i64 mod rateDiff
     result = toFloat(int(secs)) + toFloat(int(subsecs)) * 0.0000001
+  elif defined(plan9):
+    result = float(nsec())  * 0.0000000001
   elif defined(js):
     result = newDate().getTime() / 1000
   else:
@@ -2619,6 +2664,8 @@ when not defined(js):
       discard clock_gettime(CLOCK_THREAD_CPUTIME_ID, ts)
       result = toFloat(ts.tv_sec.int) +
         toFloat(ts.tv_nsec.int) / 1_000_000_000
+    elif defined(plan9):
+      float plan9.cputime()
     else:
       result = toFloat(int(getClock())) / toFloat(clocksPerSec)
 

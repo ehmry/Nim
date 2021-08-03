@@ -11,7 +11,7 @@
 
 include "system/inclrtl"
 
-when not defined(windows):
+when defined(posix):
   import posix
 
 when defined(freebsd) or defined(macosx):
@@ -32,19 +32,22 @@ when defined(macosx) or defined(bsd):
               a: var csize_t, b: pointer, c: csize_t): cint {.
               importc: "sysctl", nodecl.}
 
-when defined(genode):
+elif defined(genode):
   include genode/env
 
   proc affinitySpaceTotal(env: GenodeEnvPtr): cuint {.
     importcpp: "@->cpu().affinity_space().total()".}
 
-when defined(haiku):
+elif defined(haiku):
   type
     SystemInfo {.importc: "system_info", header: "<OS.h>".} = object
       cpuCount {.importc: "cpu_count".}: uint32
 
   proc getSystemInfo(info: ptr SystemInfo): int32 {.importc: "get_system_info",
                                                     header: "<OS.h>".}
+
+elif defined(plan9):
+  from parseutils import parseInt
 
 proc countProcessors*(): int {.rtl, extern: "ncpi$1".} =
   ## returns the number of the processors/cores the machine has.
@@ -92,6 +95,8 @@ proc countProcessors*(): int {.rtl, extern: "ncpi$1".} =
     var sysinfo: SystemInfo
     if getSystemInfo(addr sysinfo) == 0:
       result = sysinfo.cpuCount.int
+  elif defined(plan9):
+    discard parseInt(readFile"/env/NPROC", result)
   else:
     result = sysconf(SC_NPROCESSORS_ONLN)
   if result <= 0: result = 0

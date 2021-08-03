@@ -1416,6 +1416,14 @@ proc genMainProc(m: BModule) =
         MainProcsWithResult &
       "}$N$N"
 
+    Plan9Main =
+      "void main(int argc, char *argv[]) {$N" &
+        "\tcmdLine = argv;$N" &
+        "\tcmdCount = argc;$N" &
+        MainProcs &
+        "\texits(nil);$N" &
+      "}$N$N"
+
     StandaloneCMain =
       "int main(void) {$N" &
         MainProcs &
@@ -1518,6 +1526,9 @@ proc genMainProc(m: BModule) =
       appcg(m, m.s[cfsProcs], otherMain, [])
     elif optGenDynLib in m.config.globalOptions:
       const otherMain = PosixCDllMain
+      appcg(m, m.s[cfsProcs], otherMain, [])
+    elif m.config.target.targetOS == osPlan9:
+      const otherMain = Plan9Main
       appcg(m, m.s[cfsProcs], otherMain, [])
     elif m.config.target.targetOS == osStandalone:
       const otherMain = StandaloneCMain

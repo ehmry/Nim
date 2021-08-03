@@ -128,7 +128,7 @@ when defined(posix) and not defined(nintendoswitch):
   proc unloadLib(lib: LibHandle) = discard dlclose(lib)
   proc symAddr(lib: LibHandle, name: cstring): pointer = dlsym(lib, name)
 
-elif defined(nintendoswitch):
+elif defined(nintendoswitch) or defined(plan9):
   #
   # =========================================================================
   # Nintendo switch DevkitPro sdk does not have these. Raise an error if called.
@@ -136,19 +136,19 @@ elif defined(nintendoswitch):
   #
 
   proc dlclose(lib: LibHandle) =
-    raise newException(OSError, "dlclose not implemented on Nintendo Switch!")
+    raise newException(OSError, "dlclose not available!")
   proc dlopen(path: cstring, mode: int): LibHandle =
-    raise newException(OSError, "dlopen not implemented on Nintendo Switch!")
+    raise newException(OSError, "dlopen not available!")
   proc dlsym(lib: LibHandle, name: cstring): pointer =
-    raise newException(OSError, "dlsym not implemented on Nintendo Switch!")
+    raise newException(OSError, "dlsym not available!")
   proc loadLib(path: string, global_symbols = false): LibHandle =
-    raise newException(OSError, "loadLib not implemented on Nintendo Switch!")
+    raise newException(OSError, "loadLib not available!")
   proc loadLib(): LibHandle =
-    raise newException(OSError, "loadLib not implemented on Nintendo Switch!")
+    raise newException(OSError, "loadLib not available!")
   proc unloadLib(lib: LibHandle) =
-    raise newException(OSError, "unloadLib not implemented on Nintendo Switch!")
+    raise newException(OSError, "unloadLib not available!")
   proc symAddr(lib: LibHandle, name: cstring): pointer =
-    raise newException(OSError, "symAddr not implemented on Nintendo Switch!")
+    raise newException(OSError, "symAddr not available!")
 
 elif defined(windows) or defined(dos):
   #

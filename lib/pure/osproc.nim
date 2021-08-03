@@ -25,6 +25,8 @@ export quoteShell, quoteShellWindows, quoteShellPosix
 
 when defined(windows):
   import winlean
+elif defined(plan9):
+  import plan9, parseutils
 else:
   import posix
 
@@ -54,11 +56,10 @@ type
     when defined(windows):
       fProcessHandle: Handle
       fThreadHandle: Handle
-      inHandle, outHandle, errHandle: FileHandle
       id: Handle
     else:
-      inHandle, outHandle, errHandle: FileHandle
       id: Pid
+    inHandle, outHandle, errHandle: FileHandle
     inStream, outStream, errStream: owned(Stream)
     exitStatus: cint
     exitFlag: bool
@@ -159,7 +160,7 @@ proc close*(p: Process) {.rtl, extern: "nosp$1", tags: [WriteIOEffect].}
   ## terminate the process. Doing so may result in zombie processes and
   ## `pty leaks <http://stackoverflow.com/questions/27021641/how-to-fix-request-failed-on-channel-0>`_.
 
-proc suspend*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
+proc suspend*(p: Process) {.rtl, extern: "nosp$1".}
   ## Suspends the process `p`.
   ##
   ## See also:
@@ -168,7 +169,7 @@ proc suspend*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
   ## * `kill proc <#kill,Process>`_
 
 
-proc resume*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
+proc resume*(p: Process) {.rtl, extern: "nosp$1".}
   ## Resumes the process `p`.
   ##
   ## See also:
@@ -176,7 +177,7 @@ proc resume*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
   ## * `terminate proc <#terminate,Process>`_
   ## * `kill proc <#kill,Process>`_
 
-proc terminate*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
+proc terminate*(p: Process) {.rtl, extern: "nosp$1".}
   ## Stop the process `p`.
   ##
   ## On Posix OSes the procedure sends ``SIGTERM`` to the process.
@@ -188,7 +189,7 @@ proc terminate*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
   ## * `resume proc <#resume,Process>`_
   ## * `kill proc <#kill,Process>`_
 
-proc kill*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
+proc kill*(p: Process) {.rtl, extern: "nosp$1".}
   ## Kill the process `p`.
   ##
   ## On Posix OSes the procedure sends ``SIGKILL`` to the process.
@@ -199,7 +200,7 @@ proc kill*(p: Process) {.rtl, extern: "nosp$1", tags: [].}
   ## * `resume proc <#resume,Process>`_
   ## * `terminate proc <#terminate,Process>`_
 
-proc running*(p: Process): bool {.rtl, extern: "nosp$1", tags: [].}
+proc running*(p: Process): bool {.rtl, extern: "nosp$1".}
   ## Returns true if the process `p` is still running. Returns immediately.
 
 proc processID*(p: Process): int {.rtl, extern: "nosp$1".} =
@@ -207,10 +208,10 @@ proc processID*(p: Process): int {.rtl, extern: "nosp$1".} =
   ##
   ## See also:
   ## * `os.getCurrentProcessId proc <os.html#getCurrentProcessId>`_
-  return p.id
+  return p.id.int
 
 proc waitForExit*(p: Process, timeout: int = -1): int {.rtl,
-    extern: "nosp$1", tags: [].}
+    extern: "nosp$1".}
   ## Waits for the process to finish and returns `p`'s error code.
   ##
   ## **WARNING**: Be careful when using `waitForExit` for processes created without
@@ -384,6 +385,8 @@ proc execProcesses*(cmds: openArray[string],
               q[r].exitStatus = status
               rexit = r
               break
+      elif defined(plan9):
+        raiseAssert("not implemented for Plan 9") # TODO
       else:
         var status: cint = 1
         # waiting for all children, get result if any child exits
@@ -906,6 +909,158 @@ when defined(Windows) and not defined(useNimRtl):
     var x: int32
     if peekNamedPipe(p.outHandle, lpTotalBytesAvail = addr x):
       result = x > 0
+
+elif defined(plan9):
+  # See http://man.9front.org/3/proc
+  
+  const
+    stdin = 0
+    stdout = 1
+    stderr = 2
+    Rd = 0
+    Wr = 1
+
+  proc execCmd(command: string): int =
+    raiseAssert("not implemented for Plan 9") # TODO
+
+  type StartParams = object
+    name: cstring
+    argv: cstringArray
+    workingDir: cstring
+    fds: array[3, cint]
+    options: set[ProcessOption]
+
+  proc pipe(fd: var array[2, cint]) =
+    if pipe(addr fd) != 0:
+      raiseOSError(osLastError())
+
+  {.push stacktrace: off, profiler: off.}
+  proc forkAndExec(sp: ptr StartParams): Pid =
+    var pipes: array[3, array[2, cint]]
+    if poParentStreams notin sp.options:
+      for fd in stdin..stdout:
+        pipe(pipes[fd])
+      if poStdErrToStdOut notin sp.options:
+        pipe(pipes[stdErr])
+      else:
+        pipes[stdErr] = [cint -1, -1]
+    result = fork()
+    case result
+    of Pid -1:
+      if poParentStreams notin sp.options:
+        for i in 0..5: discard close(pipes[i shr 1][i and 1])
+    of Pid 0:
+      if poParentStreams notin sp.options:
+        discard dup(pipes[stdin][Rd], stdin)
+        discard close(pipes[stdin][Rd])
+        discard dup(pipes[stdout][Wr], stdout)
+        discard close(pipes[stdout][Wr])
+        if postdErrToStdOut notin sp.options:
+          discard dup(pipes[stdErr][Wr], stdErr)
+          discard close(pipes[stderr][Rd])
+        else:
+          discard dup(stdout, stdErr)
+      discard exec(sp.name, sp.argv)
+      exits("return from exec")
+    else:
+      if poParentStreams notin sp.options:
+        discard close pipes[stdin][Rd]
+        discard close pipes[stdout][Wr]
+        sp.fds[stdin] = pipes[stdin][Wr]
+        sp.fds[stdout] = pipes[stdout][Rd]
+        if postdErrToStdOut notin sp.options:
+          sp.fds[stdErr] = pipes[stdErr][Rd]
+          discard close pipes[stderr][Wr]
+  {.pop.}
+
+  proc startProcess(command: string, workingDir: string = "", args: openArray[string] = [], env: StringTableRef = nil, options: set[ProcessOption] = {poStdErrToStdOut}): owned(Process) =
+    if poEvalCommand in options:
+      var newOpts = options - {poEvalCommand}
+      result = startProcess("/bin/rc", workingDir, @["-c", command], env, newOpts)
+    else:
+      if poEchoCmd in options:
+        echo(command, " ", join(args, " "))
+      var argSeq = newSeqOfCap[string](args.len.succ)
+      argSeq.add command
+      argSeq.add args
+      var params = StartParams(
+        name: command,
+        argv: allocCStringArray(argSeq), # leak?
+        options: options,
+        fds: [cint -1, -1, -1])
+      let pid = forkAndExec(addr params)
+      if pid == Pid -1: raiseOSError(osLastError())
+      result = Process(id: pid,
+          inHandle: params.fds[stdin],
+          outHandle: params.fds[stdout],
+          errHandle: params.fds[stderr])
+
+  proc procExists(p: Process): bool =
+    access("/proc/" & $p.id, AEXIST) == 0
+
+  proc writeCtl(p: Process; msg: string) =
+    try: writeFile("/proc" / $p.id / "status", msg & "\n")
+    except: discard
+
+  proc status(p: Process; i: Natural): string =
+    try:
+      var status = readFile("/proc" / $p.id / "status")
+      var off: int
+      for i in 0..<i:
+        off.inc(skipUntil(status, ' ', off))
+        off.inc(skipWhile(status, {' '}, off))
+      discard parseUntil(status, result, {' '}, off)
+    except: discard
+
+  proc close(p: Process) =
+    p.writeCtl("kill")
+    discard close(p.inHandle)
+    discard close(p.outHandle)
+    discard close(p.errHandle)
+
+  proc suspend(p: Process) = p.writeCtl("stop")
+  proc resume(p: Process) = p.writeCtl("start")
+
+  proc terminate(p: Process) = p.writeCtl("kill")
+  proc kill(p: Process) = p.writeCtl("kill")
+
+  proc running(p: Process): bool =
+    let s = p.status(2)
+    s != "" and s != "Stopped"
+
+  proc waitForExit(p: Process, timeout: int = -1): int =
+    p.writeCtl("waitstop")
+
+  proc peekExitCode(p: Process): int =
+    if p.procExists: result = -1
+
+  proc createStream(handle: var FileHandle,
+                    fileMode: FileMode): owned FileStream =
+    # TODO: dedup
+    var f: File
+    if not open(f, handle, fileMode): raiseOSError(osLastError())
+    return newFileStream(f)
+
+  template getStream(p, stream, handle, mode: untyped): untyped =
+    streamAccess(p)
+    if p.`stream` == nil:
+      p.`stream` = createStream(p.`handle`, mode)
+    return p.`stream`
+
+  proc inputStream(p: Process): Stream =
+    getStream(p, inStream, inHandle, fmWrite)
+
+  proc outputStream(p: Process): Stream =
+    getStream(p, outStream, outHandle, fmRead)
+
+  proc errorStream(p: Process): Stream =
+    getStream(p, errStream, errHandle, fmRead)
+
+  proc peekableOutputStream(p: Process): Stream =
+    raiseAssert "Not available on Plan 9"
+
+  proc peekableErrorStream(p: Process): Stream =
+    raiseAssert "Not available on Plan 9"
 
 elif not defined(useNimRtl):
   const

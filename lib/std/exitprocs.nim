@@ -32,6 +32,9 @@ when defined(js):
       asm """
         window.onbeforeunload = `quitProc`;
       """
+elif defined(plan9):
+  proc addAtExit(quitProc: proc() {.noconv.}) {.importc: "atexit".}
+
 else:
   proc addAtExit(quitProc: proc() {.noconv.}) {.
     importc: "atexit", header: "<stdlib.h>".}

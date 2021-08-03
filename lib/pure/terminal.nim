@@ -205,6 +205,11 @@ when defined(windows):
     let term = getTerminal()
     if f == stderr: term.hStderr else: term.hStdout
 
+elif defined(plan9):
+  # pretend this is the '70s
+  proc terminalWidth*(): int = 80
+  proc terminalHeight*(): int = 50
+
 else:
   import termios, posix, os, parseutils
 
@@ -294,6 +299,7 @@ proc hideCursor*(f: File) =
   ## Hides the cursor.
   when defined(windows):
     setCursorVisibility(f, false)
+  elif defined(plan9): discard
   else:
     f.write("\e[?25l")
 
@@ -301,6 +307,7 @@ proc showCursor*(f: File) =
   ## Shows the cursor.
   when defined(windows):
     setCursorVisibility(f, true)
+  elif defined(plan9): discard
   else:
     f.write("\e[?25h")
 
@@ -310,6 +317,7 @@ proc setCursorPos*(f: File, x, y: int) =
   when defined(windows):
     let h = conHandle(f)
     setCursorPos(h, x, y)
+  elif defined(plan9): discard
   else:
     f.write(fmt"{stylePrefix}{y+1};{x+1}f")
 
@@ -325,6 +333,7 @@ proc setCursorXPos*(f: File, x: int) =
     origin.x = int16(x)
     if setConsoleCursorPosition(h, origin) == 0:
       raiseOSError(osLastError())
+  elif defined(plan9): discard
   else:
     f.write(fmt"{stylePrefix}{x+1}G")
 
@@ -352,6 +361,7 @@ proc cursorUp*(f: File, count = 1) =
     var p = getCursorPos(h)
     dec(p.y, count)
     setCursorPos(h, p.x, p.y)
+  elif defined(plan9): discard
   else:
     f.write("\e[" & $count & 'A')
 
@@ -362,6 +372,7 @@ proc cursorDown*(f: File, count = 1) =
     var p = getCursorPos(h)
     inc(p.y, count)
     setCursorPos(h, p.x, p.y)
+  elif defined(plan9): discard
   else:
     f.write(fmt"{stylePrefix}{count}B")
 
@@ -372,6 +383,7 @@ proc cursorForward*(f: File, count = 1) =
     var p = getCursorPos(h)
     inc(p.x, count)
     setCursorPos(h, p.x, p.y)
+  elif defined(plan9): discard
   else:
     f.write(fmt"{stylePrefix}{count}C")
 
@@ -382,6 +394,7 @@ proc cursorBackward*(f: File, count = 1) =
     var p = getCursorPos(h)
     dec(p.x, count)
     setCursorPos(h, p.x, p.y)
+  elif defined(plan9): discard
   else:
     f.write(fmt"{stylePrefix}{count}D")
 
@@ -435,6 +448,7 @@ proc eraseLine*(f: File) =
     if fillConsoleOutputAttribute(h, scrbuf.wAttributes, wt,
                                   scrbuf.dwCursorPosition, addr(numwrote)) == 0:
       raiseOSError(osLastError())
+  elif defined(plan9): discard
   else:
     f.write("\e[2K")
     setCursorXPos(f, 0)
@@ -458,6 +472,7 @@ proc eraseScreen*(f: File) =
                                   origin, addr(numwrote)) == 0:
       raiseOSError(osLastError())
     setCursorXPos(f, 0)
+  elif defined(plan9): discard
   else:
     f.write("\e[2J")
 
@@ -474,6 +489,7 @@ proc resetAttributes*(f: File) =
       discard setConsoleTextAttribute(term.hStderr, term.oldStderrAttr)
     else:
       discard setConsoleTextAttribute(term.hStdout, term.oldStdoutAttr)
+  elif defined(plan9): discard
   else:
     f.write(ansiResetCode)
     gFG = 0
@@ -512,6 +528,7 @@ proc setStyle*(f: File, style: set[Style]) =
     if styleReverse in style: a = a or 0x4000'i16 # COMMON_LVB_REVERSE_VIDEO
     if styleUnderscore in style: a = a or 0x8000'i16 # COMMON_LVB_UNDERSCORE
     discard setConsoleTextAttribute(h, old or a)
+  elif defined(plan9): discard
   else:
     for s in items(style):
       f.write(ansiStyleCode(s))
@@ -524,6 +541,7 @@ proc writeStyled*(txt: string, style: set[Style] = {styleBright}) =
     stdout.setStyle(style)
     stdout.write(txt)
     discard setConsoleTextAttribute(term.hStdout, old)
+  elif defined(plan9): stdout.write(txt)
   else:
     stdout.setStyle(style)
     stdout.write(txt)
@@ -585,6 +603,7 @@ proc setForegroundColor*(f: File, fg: ForegroundColor, bright = false) =
       discard setConsoleTextAttribute(h, toU16(old or defaultForegroundColor))
     else:
       discard setConsoleTextAttribute(h, toU16(old or lookup[fg]))
+  elif defined(plan9): discard
   else:
     gFG = ord(fg)
     if bright: inc(gFG, 60)
@@ -614,6 +633,7 @@ proc setBackgroundColor*(f: File, bg: BackgroundColor, bright = false) =
       discard setConsoleTextAttribute(h, toU16(old or defaultBackgroundColor))
     else:
       discard setConsoleTextAttribute(h, toU16(old or lookup[bg]))
+  elif defined(plan9): discard
   else:
     gBG = ord(bg)
     if bright: inc(gBG, 60)
@@ -665,14 +685,15 @@ proc setTrueColor(f: File, color: Color) =
 
 proc isatty*(f: File): bool =
   ## Returns true if `f` is associated with a terminal device.
-  when defined(posix):
-    proc isatty(fildes: FileHandle): cint {.
-      importc: "isatty", header: "<unistd.h>".}
-  else:
-    proc isatty(fildes: FileHandle): cint {.
-      importc: "_isatty", header: "<io.h>".}
+  when not defined(plan9):
+    when defined(posix):
+      proc isatty(fildes: FileHandle): cint {.
+        importc: "isatty", header: "<unistd.h>".}
+    else:
+      proc isatty(fildes: FileHandle): cint {.
+        importc: "_isatty", header: "<io.h>".}
 
-  result = isatty(getFileHandle(f)) != 0'i32
+    result = isatty(getFileHandle(f)) != 0'i32
 
 type
   TerminalCmd* = enum ## commands that can be expressed as arguments
@@ -760,6 +781,8 @@ proc getch*(): char =
       if numRead == 0 or keyEvent.eventType != 1 or keyEvent.bKeyDown == 0:
         continue
       return char(keyEvent.uChar)
+  elif defined(plan9):
+    stdin.readChar()
   else:
     let fd = getFileHandle(stdin)
     var oldMode: Termios
@@ -793,6 +816,10 @@ when defined(windows):
     discard setConsoleMode(hi, origMode)
     discard closeHandle(hi)
     stdout.write "\n"
+
+elif defined(plan9):
+  # TODO http://man.9front.org/2/auth
+  proc readPasswordFromStdin*(prompt: string, password: var TaintedString): bool = false
 
 else:
   import termios
@@ -881,6 +908,7 @@ proc enableTrueColors*() =
             term.trueColorIsEnabled = false
       else:
         term.trueColorIsEnabled = true
+  elif defined(plan9): discard
   else:
     term.trueColorIsSupported = string(getEnv("COLORTERM")).toLowerAscii() in [
         "truecolor", "24bit"]

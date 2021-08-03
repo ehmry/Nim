@@ -226,8 +226,11 @@ template tearDownForeignThreadGc* =
   ## With ``--gc:arc`` a nop.
   discard
 
+when defined(plan9): {.pragma: stringheader.}
+else: {.pragma: stringheader, header: "<string.h>".}
+
 proc isObj(obj: PNimTypeV2, subclass: cstring): bool {.compilerRtl, inl.} =
-  proc strstr(s, sub: cstring): cstring {.header: "<string.h>", importc.}
+  proc strstr(s, sub: cstring): cstring {.importc, stringheader.}
 
   result = strstr(obj.name, subclass) != nil
 

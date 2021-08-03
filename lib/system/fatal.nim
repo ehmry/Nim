@@ -39,7 +39,7 @@ elif (defined(nimQuirky) or defined(nimPanics)) and not defined(nimscript):
     add(buf, name exceptn)
     add(buf, "]\n")
     cstderr.rawWrite buf
-    quit 1
+    quit QuitFailure
 
   proc sysFatal(exceptn: typedesc, message: string) {.inline, noreturn.} =
     sysFatal(exceptn, message, "")

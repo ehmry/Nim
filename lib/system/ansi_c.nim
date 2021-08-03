@@ -15,31 +15,49 @@
 when not defined(nimHasHotCodeReloading):
   {.pragma: nonReloadable.}
 
+when defined(plan9):
+  {.pragma: stringheader.}
+  {.pragma: stdlibheader.}
+  {.pragma: setjmpheader.}
+  {.pragma: signalheader.}
+else:
+  {.pragma: stringheader, header: "<string.h>".}
+  {.pragma: stdlibheader, header: "<stdlib.h>".}
+  {.pragma: setjmpheader, header: "<setjmp.h>".}
+  {.pragma: signalheader, header: "<signal.h>".}
+
 proc c_memchr*(s: pointer, c: cint, n: csize_t): pointer {.
-  importc: "memchr", header: "<string.h>".}
+  importc: "memchr", stringheader.}
 proc c_memcmp*(a, b: pointer, size: csize_t): cint {.
-  importc: "memcmp", header: "<string.h>", noSideEffect.}
+  importc: "memcmp", stringheader, noSideEffect.}
 proc c_memcpy*(a, b: pointer, size: csize_t): pointer {.
-  importc: "memcpy", header: "<string.h>", discardable.}
+  importc: "memcpy", stringheader, discardable.}
 proc c_memmove*(a, b: pointer, size: csize_t): pointer {.
-  importc: "memmove", header: "<string.h>",discardable.}
+  importc: "memmove", stringheader,discardable.}
 proc c_memset*(p: pointer, value: cint, size: csize_t): pointer {.
-  importc: "memset", header: "<string.h>", discardable.}
+  importc: "memset", stringheader, discardable.}
 proc c_strcmp*(a, b: cstring): cint {.
-  importc: "strcmp", header: "<string.h>", noSideEffect.}
-proc c_strlen*(a: cstring): csize_t {.
-  importc: "strlen", header: "<string.h>", noSideEffect.}
+  importc: "strcmp", stringheader, noSideEffect.}
 proc c_abort*() {.
-  importc: "abort", header: "<stdlib.h>", noSideEffect, noreturn.}
+  importc: "abort", stdlibheader, noSideEffect, noreturn.}
+
+when defined(plan9):
+  proc c_strlen*(a: cstring): clong {.
+    importc: "strlen", stringheader, noSideEffect.}
+else:
+  proc c_strlen*(a: cstring): csize_t {.
+    importc: "strlen", stringheader, noSideEffect.}
+
+
 
 
 when defined(linux) and defined(amd64):
   type
-    C_JmpBuf* {.importc: "jmp_buf", header: "<setjmp.h>", bycopy.} = object
+    C_JmpBuf* {.importc: "jmp_buf", setjmpheader, bycopy.} = object
         abi: array[200 div sizeof(clong), clong]
 else:
   type
-    C_JmpBuf* {.importc: "jmp_buf", header: "<setjmp.h>".} = object
+    C_JmpBuf* {.importc: "jmp_buf", setjmpheader.} = object
 
 
 when defined(windows):
@@ -91,25 +109,25 @@ elif defined(haiku):
 
 when defined(nimSigSetjmp) and not defined(nimStdSetjmp):
   proc c_longjmp*(jmpb: C_JmpBuf, retval: cint) {.
-    header: "<setjmp.h>", importc: "siglongjmp".}
+    setjmpheader, importc: "siglongjmp".}
   template c_setjmp*(jmpb: C_JmpBuf): cint =
     proc c_sigsetjmp(jmpb: C_JmpBuf, savemask: cint): cint {.
-      header: "<setjmp.h>", importc: "sigsetjmp".}
+      setjmpheader, importc: "sigsetjmp".}
     c_sigsetjmp(jmpb, 0)
 elif defined(nimRawSetjmp) and not defined(nimStdSetjmp):
   proc c_longjmp*(jmpb: C_JmpBuf, retval: cint) {.
-    header: "<setjmp.h>", importc: "_longjmp".}
+    setjmpheader, importc: "_longjmp".}
   proc c_setjmp*(jmpb: C_JmpBuf): cint {.
-    header: "<setjmp.h>", importc: "_setjmp".}
+    setjmpheader, importc: "_setjmp".}
 else:
   proc c_longjmp*(jmpb: C_JmpBuf, retval: cint) {.
-    header: "<setjmp.h>", importc: "longjmp".}
+    setjmpheader, importc: "longjmp".}
   proc c_setjmp*(jmpb: C_JmpBuf): cint {.
-    header: "<setjmp.h>", importc: "setjmp".}
+    setjmpheader, importc: "setjmp".}
 
 type CSighandlerT = proc (a: cint) {.noconv.}
 proc c_signal*(sign: cint, handler: proc (a: cint) {.noconv.}): CSighandlerT {.
-  importc: "signal", header: "<signal.h>", discardable.}
+  importc: "signal", signalheader, discardable.}
 
 type
   CFile {.importc: "FILE", header: "<stdio.h>",
@@ -140,13 +158,13 @@ proc c_sprintf*(buf, frmt: cstring): cint {.
   # we use it only in a way that cannot lead to security issues
 
 proc c_malloc*(size: csize_t): pointer {.
-  importc: "malloc", header: "<stdlib.h>".}
+  importc: "malloc", stdlibheader.}
 proc c_calloc*(nmemb, size: csize_t): pointer {.
-  importc: "calloc", header: "<stdlib.h>".}
+  importc: "calloc", stdlibheader.}
 proc c_free*(p: pointer) {.
-  importc: "free", header: "<stdlib.h>".}
+  importc: "free", stdlibheader.}
 proc c_realloc*(p: pointer, newsize: csize_t): pointer {.
-  importc: "realloc", header: "<stdlib.h>".}
+  importc: "realloc", stdlibheader.}
 
 proc c_fwrite*(buf: pointer, size, n: csize_t, f: CFilePtr): cint {.
   importc: "fwrite", header: "<stdio.h>".}

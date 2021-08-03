@@ -3,7 +3,7 @@
 when not declared(os) and not declared(ospaths):
   {.error: "This is an include file for os.nim!".}
 
-when not defined(nimscript):
+when not defined(nimscript) and not defined(plan9):
   var errno {.importc, header: "<errno.h>".}: cint
 
   proc c_strerror(errnum: cint): cstring {.
@@ -12,8 +12,9 @@ when not defined(nimscript):
   when defined(windows):
     import winlean
 
-proc `==`*(err1, err2: OSErrorCode): bool {.borrow.}
-proc `$`*(err: OSErrorCode): string {.borrow.}
+when not defined(plan9):
+  proc `==`*(err1, err2: OSErrorCode): bool {.borrow.}
+  proc `$`*(err: OSErrorCode): string {.borrow.}
 
 proc osErrorMsg*(errorCode: OSErrorCode): string =
   ## Converts an OS error code into a human readable string.
@@ -53,6 +54,8 @@ proc osErrorMsg*(errorCode: OSErrorCode): string =
                         nil, errorCode.int32, 0, addr(msgbuf), 0, nil) != 0'i32:
           result = $msgbuf
           if msgbuf != nil: localFree(msgbuf)
+  elif defined(plan9):
+    result = $errorCode
   else:
     if errorCode != OSErrorCode(0'i32):
       result = $c_strerror(errorCode.int32)
@@ -76,8 +79,11 @@ proc newOSError*(
   ## * `osErrorMsg proc <#osErrorMsg,OSErrorCode>`_
   ## * `osLastError proc <#osLastError>`_
   var e: owned(ref OSError); new(e)
-  e.errorCode = errorCode.int32
-  e.msg = osErrorMsg(errorCode)
+  when defined(plan9):
+    e.msg = $errorCode
+  else:
+    e.errorCode = errorCode.int32
+    e.msg = osErrorMsg(errorCode)
   if additionalInfo.len > 0:
     if e.msg.len > 0 and e.msg[^1] != '\n': e.msg.add '\n'
     e.msg.add  "Additional info: "
@@ -115,6 +121,8 @@ proc osLastError*(): OSErrorCode {.sideEffect.} =
     discard
   elif defined(windows):
     result = cast[OSErrorCode](getLastError())
+  elif defined(plan9):
+    result = errstr()
   else:
     result = OSErrorCode(errno)
 {.pop.}

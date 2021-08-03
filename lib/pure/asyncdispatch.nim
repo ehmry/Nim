@@ -1102,6 +1102,9 @@ when defined(windows) or defined(nimdoc):
     ev.hWaiter = pcd.waitFd
 
   initAll()
+elif defined(plan9):
+  discard
+
 else:
   import selectors
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,

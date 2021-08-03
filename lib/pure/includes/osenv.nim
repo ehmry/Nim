@@ -6,12 +6,21 @@ when not declared(os) and not declared(ospaths):
 when defined(windows):
   from parseutils import skipIgnoreCase
 
-proc c_getenv(env: cstring): cstring {.
-  importc: "getenv", header: "<stdlib.h>".}
-proc c_putenv(env: cstring): cint {.
-  importc: "putenv", header: "<stdlib.h>".}
-proc c_unsetenv(env: cstring): cint {.
-  importc: "unsetenv", header: "<stdlib.h>".}
+when defined(plan9):
+  # see http://man.9front.org/3/env
+  import plan9
+  {.pragma: stringh.}
+  proc c_getenv(name: cstring): cstring {.importc: "getenv".}
+  proc c_putenv(name, val: cstring): cint {.importc: "putenv".}
+
+else:
+  {.pragma: stringh, header: "<string.h>".}
+  proc c_getenv(env: cstring): cstring {.
+    importc: "getenv", header: "<stdlib.h>".}
+  proc c_putenv(env: cstring): cint {.
+    importc: "putenv", header: "<stdlib.h>".}
+  proc c_unsetenv(env: cstring): cint {.
+    importc: "unsetenv", header: "<stdlib.h>".}
 
 # Environment handling cannot be put into RTL, because the ``envPairs``
 # iterator depends on ``environment``.
@@ -31,13 +40,13 @@ when defined(windows) and not defined(nimscript):
   when useWinUnicode:
     when defined(cpp):
       proc strEnd(cstr: WideCString, c = 0'i32): WideCString {.
-        importcpp: "(NI16*)wcschr((const wchar_t *)#, #)", header: "<string.h>".}
+        importcpp: "(NI16*)wcschr((const wchar_t *)#, #)", stringh.}
     else:
       proc strEnd(cstr: WideCString, c = 0'i32): WideCString {.
-        importc: "wcschr", header: "<string.h>".}
+        importc: "wcschr", stringh.}
   else:
     proc strEnd(cstr: cstring, c = 0'i32): cstring {.
-      importc: "strchr", header: "<string.h>".}
+      importc: "strchr", stringh.}
 
   proc getEnvVarsC() =
     if not envComputed:
@@ -66,6 +75,21 @@ when defined(windows) and not defined(nimscript):
         discard freeEnvironmentStringsA(env)
       envComputed = true
 
+elif defined(plan9):
+  proc getEnvVarsC() =
+    if not envComputed:
+      var db: ptr UncheckedArray[Dir]
+      let fd = open("/env", OREAD)
+      if fd == -1: raiseOSError(osLastError())
+      let n = dirreadall(fd, db)
+      discard close(fd)
+      if n < 0: raiseOSError(osLastError(), "/env")
+      for i in 0..<n:
+        let key = $db[i].name
+        environment.add(key & "=" & $c_getenv(key))
+      c_free(db)
+      envComputed = true
+
 else:
   const
     useNSGetEnviron = (defined(macosx) and not defined(ios) and not defined(emscripten)) or defined(nimscript)
@@ -82,7 +106,7 @@ else:
     proc NSGetEnviron(): ptr cstringArray {.
       importc: "_NSGetEnviron", header: "<crt_externs.h>".}
   elif defined(haiku):
-    var gEnv {.importc: "environ", header: "<stdlib.h>".}: cstringArray
+    var gEnv {.importc: "environ", stdlibh.}: cstringArray
   else:
     var gEnv {.importc: "environ".}: cstringArray
 
@@ -183,6 +207,9 @@ proc putEnv*(key, val: string) {.tags: [WriteEnvEffect].} =
         if setEnvironmentVariableW(k, v) == 0'i32: raiseOSError(osLastError())
       else:
         if setEnvironmentVariableA(key, val) == 0'i32: raiseOSError(osLastError())
+    elif defined(plan9):
+      if c_putenv(key, val) != 0:
+        raiseOSError(osLastError())
     else:
       if c_putenv(environment[indx]) != 0'i32:
         raiseOSError(osLastError())
@@ -207,6 +234,8 @@ proc delEnv*(key: string) {.tags: [WriteEnvEffect].} =
         if setEnvironmentVariableW(k, nil) == 0'i32: raiseOSError(osLastError())
       else:
         if setEnvironmentVariableA(key, nil) == 0'i32: raiseOSError(osLastError())
+    elif defined(plan9):
+      discard remove("/env/" & key)
     else:
       if c_unsetenv(key) != 0'i32:
         raiseOSError(osLastError())

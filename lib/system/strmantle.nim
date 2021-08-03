@@ -98,8 +98,13 @@ proc nimFloatToStr(f: float): string {.compilerproc.} =
   result = newStringOfCap(8)
   result.addFloat f
 
+when defined(plan9):
+  {.pragma: stdlibheader.}
+else:
+  {.pragma: stdlibheader, header: "<stdlib.h>".}
+
 proc c_strtod(buf: cstring, endptr: ptr cstring): float64 {.
-  importc: "strtod", header: "<stdlib.h>", noSideEffect.}
+  importc: "strtod", stdlibheader, noSideEffect.}
 
 const
   IdentChars = {'a'..'z', 'A'..'Z', '0'..'9', '_'}

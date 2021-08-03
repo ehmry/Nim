@@ -504,11 +504,15 @@ typedef char* NCSTRING;
 
 // NAN definition copied from math.h included in the Windows SDK version 10.0.14393.0
 #ifndef NAN
-#  ifndef _HUGE_ENUF
-#    define _HUGE_ENUF  1e+300  // _HUGE_ENUF*_HUGE_ENUF must overflow
+# ifdef NIM_PLAN9
+#    define NAN NaN()
+#  else
+#    ifndef _HUGE_ENUF
+#      define _HUGE_ENUF  1e+300  // _HUGE_ENUF*_HUGE_ENUF must overflow
+#    endif
+#    define NAN_INFINITY ((float)(_HUGE_ENUF * _HUGE_ENUF))
+#    define NAN ((float)(NAN_INFINITY * 0.0F))
 #  endif
-#  define NAN_INFINITY ((float)(_HUGE_ENUF * _HUGE_ENUF))
-#  define NAN ((float)(NAN_INFINITY * 0.0F))
 #endif
 
 #ifndef INF
@@ -519,6 +523,8 @@ typedef char* NCSTRING;
 #  elif defined(_MSC_VER)
 #    include <float.h>
 #    define INF (DBL_MAX+DBL_MAX)
+#  elif defined(NIM_PLAN9)
+#    define INF Inf(1)
 #  else
 #    define INF (1.0 / 0.0)
 #  endif

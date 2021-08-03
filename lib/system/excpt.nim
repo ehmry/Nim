@@ -644,12 +644,48 @@ when not defined(noSignalHandler) and not defined(useNimRtl):
 
   registerSignalHandler() # call it in initialization section
 
-proc setControlCHook(hook: proc () {.noconv.}) =
-  # ugly cast, but should work on all architectures:
-  type SignalHandler = proc (sign: cint) {.noconv, benign.}
-  c_signal(SIGINT, cast[SignalHandler](hook))
+when defined(plan9):
+  import plan9
 
-when not defined(noSignalHandler) and not defined(useNimRtl):
-  proc unsetControlCHook() =
-    # proc to unset a hook set by setControlCHook
-    c_signal(SIGINT, signalHandler)
+  var userInterruptHook: proc () {.noconv.}
+
+  {.push stackTrace:off.}
+
+  proc userInterruptHandler(): cint =
+    if not userInterruptHook.isNil:
+      result = 1
+      userInterruptHook()
+
+  proc nimNoteHandler(ureg: pointer; note: cstring): cint {.cdecl.} =
+    if strcmp(note, "interrupt") == 0:
+      return userInterruptHandler()
+    when defined(memtracker):
+      logPendingOps()
+    when hasSomeStackTrace:
+      when not usesDestructors: GC_disable()
+      var buf = newStringOfCap(2000)
+      rawWriteStackTrace(buf)
+      showErrorMessage(buf)
+      when not usesDestructors: GC_enable()
+    else:
+      showErrorMessage(note)
+
+  discard atnotify(nimNoteHandler, 1)
+
+  {.pop.}
+
+  proc setControlCHook(hook: proc () {.noconv.}) =
+    userInterruptHook = hook
+
+  proc unsetControlCHook() = reset userInterruptHook
+
+else:
+  proc setControlCHook(hook: proc () {.noconv.}) =
+    # ugly cast, but should work on all architectures:
+    type SignalHandler = proc (sign: cint) {.noconv, benign.}
+    c_signal(SIGINT, cast[SignalHandler](hook))
+
+  when not defined(noSignalHandler) and not defined(useNimRtl):
+    proc unsetControlCHook() =
+      # proc to unset a hook set by setControlCHook
+      c_signal(SIGINT, signalHandler)

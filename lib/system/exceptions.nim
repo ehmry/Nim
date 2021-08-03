@@ -62,7 +62,9 @@ type
     ## Raised if an IO "end of file" error occurred.
   OSError* = object of CatchableError ## \
     ## Raised if an operating system service failed.
-    errorCode*: int32 ## OS-defined error code describing this error.
+    when not defined(plan9):
+      errorCode*: int32 ## OS-defined error code describing this error.
+
   LibraryError* = object of OSError ## \
     ## Raised if a dynamic library could not be loaded.
   ResourceExhaustedError* = object of CatchableError ## \

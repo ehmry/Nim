@@ -72,6 +72,8 @@ elif defined(posix):
 
   proc toTime(ts: Timespec): times.Time {.inline.} =
     result = initTime(ts.tv_sec.int64, ts.tv_nsec.int)
+elif defined(plan9):
+  import plan9, times
 else:
   {.error: "OS module not ported to your operating system!".}
 
@@ -103,7 +105,10 @@ type
                                             ## operation to
                                             ## the directory structure.
 
-  OSErrorCode* = distinct int32 ## Specifies an OS Error Code.
+when defined(plan9):
+  type OSErrorCode* = string
+else:
+  type OSErrorCode* = distinct int32 ## Specifies an OS Error Code.
 
 include "includes/osseps"
 
@@ -308,7 +313,7 @@ proc isAbsolute*(path: string): bool {.rtl, noSideEffect, extern: "nos$1", raise
     result = path[0] != ':'
   elif defined(RISCOS):
     result = path[0] == '$'
-  elif defined(posix) or defined(js):
+  elif defined(posix) or defined(plan9) or defined(js):
     # `or defined(js)` wouldn't be needed pending https://github.com/nim-lang/Nim/issues/13469
     # This works around the problem for posix, but windows is still broken with nim js -d:nodejs
     result = path[0] == '/'
@@ -838,7 +843,7 @@ proc unixToNativePath*(path: string, drive=""): string {.
   ## which drive label to use during absolute path conversion.
   ## `drive` defaults to the drive of the current working directory, and is
   ## ignored on systems that do not have a concept of "drives".
-  when defined(unix):
+  when defined(unix) or defined(plan9):
     result = path
   else:
     if path.len == 0: return ""
@@ -904,6 +909,7 @@ proc getHomeDir*(): string {.rtl, extern: "nos$1",
     assert getHomeDir() == expandTilde("~")
 
   when defined(windows): return string(getEnv("USERPROFILE")) & "\\"
+  elif defined(plan9): return string(getEnv("home")) & "/"
   else: return string(getEnv("HOME")) & "/"
 
 proc getConfigDir*(): string {.rtl, extern: "nos$1",
@@ -926,6 +932,8 @@ proc getConfigDir*(): string {.rtl, extern: "nos$1",
   ## * `setCurrentDir proc <#setCurrentDir,string>`_
   when defined(windows):
     result = getEnv("APPDATA").string
+  elif defined(plan9):
+    result = getHomeDir() / "lib"
   else:
     result = getEnv("XDG_CONFIG_HOME", getEnv("HOME").string / ".config").string
   result.normalizePathEnd(trailingSep = true)
@@ -953,6 +961,7 @@ proc getTempDir*(): string {.rtl, extern: "nos$1",
     result = tempDir
   elif defined(windows): result = string(getEnv("TEMP"))
   elif defined(android): result = getHomeDir()
+  elif defined(plan9): result = getHomeDir() / "tmp"
   else:
     if existsEnv("TMPDIR"): result = string(getEnv("TMPDIR"))
   normalizePathEnd(result, trailingSep=true)
@@ -1035,7 +1044,7 @@ proc quoteShellPosix*(s: string): string {.noSideEffect, rtl, extern: "nosp$1".}
   else:
     return "'" & s.replace("'", "'\"'\"'") & "'"
 
-when defined(windows) or defined(posix) or defined(nintendoswitch):
+when defined(windows) or defined(posix) or defined(nintendoswitch) or defined(plan9):
   proc quoteShell*(s: string): string {.noSideEffect, rtl, extern: "nosp$1".} =
     ## Quote ``s``, so it can be safely passed to shell.
     ##
@@ -1061,7 +1070,7 @@ when defined(windows) or defined(posix) or defined(nintendoswitch):
       if i > 0: result.add " "
       result.add quoteShell(args[i])
 
-when not weirdTarget:
+when not defined(plan9) and not weirdTarget:
   proc c_rename(oldname, newname: cstring): cint {.
     importc: "rename", header: "<stdio.h>".}
   proc c_system(cmd: cstring): cint {.
@@ -1115,6 +1124,11 @@ proc fileExists*(filename: string): bool {.rtl, extern: "nos$1",
       var a = getFileAttributesA(filename)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_DIRECTORY) == 0'i32
+  elif defined(plan9):
+    let db = dirstat(filename)
+    if not db.isNil:
+      result = db.qid.type == QTFILE
+      c_free(db)
   else:
     var res: Stat
     return stat(filename, res) >= 0'i32 and S_ISREG(res.st_mode)
@@ -1134,6 +1148,11 @@ proc dirExists*(dir: string): bool {.rtl, extern: "nos$1", tags: [ReadDirEffect]
       var a = getFileAttributesA(dir)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_DIRECTORY) != 0'i32
+  elif defined(plan9):
+    let db = dirstat(dir)
+    if not db.isNil:
+      result = (db.qid.type and QTDIR) != 0
+      c_free(db)
   else:
     var res: Stat
     return stat(dir, res) >= 0'i32 and S_ISDIR(res.st_mode)
@@ -1154,10 +1173,16 @@ proc symlinkExists*(link: string): bool {.rtl, extern: "nos$1",
       var a = getFileAttributesA(link)
     if a != -1'i32:
       result = (a and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32
+  elif defined(plan9):
+    # 9P2000.u servers may set these bits but
+    # symlink semantics are not supported
+    let db = dirstat(link)
+    if not db.isNil:
+      result = (db.qid.type and QTSYMLINK) != 0
+      c_free(db)
   else:
     var res: Stat
     return lstat(link, res) >= 0'i32 and S_ISLNK(res.st_mode)
-
 
 when not defined(nimscript):
   when not defined(js): # `noNimJs` doesn't work with templates, this should improve.
@@ -1167,7 +1192,7 @@ when not defined(nimscript):
       dirExists(args)
   # {.deprecated: [existsFile: fileExists].} # pending bug #14819; this would avoid above mentioned issue
 
-when not defined(windows) and not weirdTarget:
+when not defined(windows) and not defined(plan9) and not weirdTarget:
   proc checkSymlink(path: string): bool =
     var rawInfo: Stat
     if lstat(path, rawInfo) < 0'i32: result = false
@@ -1178,6 +1203,11 @@ const
   ExeExts* = ## Platform specific file extension for executables.
     ## On Windows ``["exe", "cmd", "bat"]``, on Posix ``[""]``.
     when defined(windows): ["exe", "cmd", "bat"] else: [""]
+
+when defined(plan9):
+  const PATH = "path"
+else:
+  const PATH = "PATH"
 
 proc findExe*(exe: string, followSymlinks: bool = true;
               extensions: openArray[string]=ExeExts): string {.
@@ -1201,7 +1231,7 @@ proc findExe*(exe: string, followSymlinks: bool = true;
     if '/' in exe: checkCurrentDir()
   else:
     checkCurrentDir()
-  let path = string(getEnv("PATH"))
+  let path = string(getEnv(PATH))
   for candidate in split(path, PathSep):
     if candidate.len == 0: continue
     when defined(windows):
@@ -1213,7 +1243,7 @@ proc findExe*(exe: string, followSymlinks: bool = true;
     for ext in extensions:
       var x = addFileExt(x, ext)
       if fileExists(x):
-        when not defined(windows):
+        when not defined(windows) and not defined(plan9):
           while followSymlinks: # doubles as if here
             if x.checkSymlink:
               var r = newString(maxSymlinkLen)
@@ -1237,6 +1267,10 @@ when weirdTarget:
   const times = "fake const"
   template Time(x: untyped): untyped = string
 
+when defined(plan9):
+  proc fromPlan9Seconds(secs: culong): Time {.inline.} =
+    initTime(int64 secs, 0)
+
 proc getLastModificationTime*(file: string): times.Time {.rtl, extern: "nos$1", noWeirdTarget.} =
   ## Returns the `file`'s last modification time.
   ##
@@ -1248,6 +1282,11 @@ proc getLastModificationTime*(file: string): times.Time {.rtl, extern: "nos$1", 
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError(), file)
     result = res.st_mtim.toTime
+  elif defined(plan9):
+    let db = dirstat(file)
+    if db.isNil: raiseOSError(osLastError(), file)
+    result = fromPlan9Seconds db.mtime
+    c_free(db)
   else:
     var f: WIN32_FIND_DATA
     var h = findFirstFile(file, f)
@@ -1266,6 +1305,11 @@ proc getLastAccessTime*(file: string): times.Time {.rtl, extern: "nos$1", noWeir
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError(), file)
     result = res.st_atim.toTime
+  elif defined(plan9):
+    let db = dirstat(file)
+    if db.isNil: raiseOSError(osLastError(), file)
+    result = initTime(int64 db.atime, 0)
+    c_free(db)
   else:
     var f: WIN32_FIND_DATA
     var h = findFirstFile(file, f)
@@ -1288,6 +1332,7 @@ proc getCreationTime*(file: string): times.Time {.rtl, extern: "nos$1", noWeirdT
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError(), file)
     result = res.st_ctim.toTime
+  elif defined(plan9): getLastModificationTime(file)
   else:
     var f: WIN32_FIND_DATA
     var h = findFirstFile(file, f)
@@ -1358,6 +1403,11 @@ when not defined(nimscript):
           else:
             setLen(result, L)
             break
+    elif defined(plan9):
+      var pathname: array[512, char]
+      let cs = getwd(pathname[0].addr, pathname.len.cint)
+      if cs.isNil: raiseOSError(osLastError())
+      result = $cs
     else:
       var bufsize = 1024 # should be enough
       result = newString(bufsize)
@@ -1545,6 +1595,19 @@ proc sameFile*(path1, path2: string): bool {.rtl, extern: "nos$1",
     discard closeHandle(f2)
 
     if not success: raiseOSError(lastErr, $(path1, path2))
+  elif defined(plan9):
+    let db1 = dirstat(path1)
+    if not db1.isNil:
+      let db2 = dirstat(path2)
+      if not db2.isNil:
+        result =
+          db1.qid.type == db2.qid.type and
+          db1.qid.path == db2.qid.path and
+          db1.qid.vers == db2.qid.vers and
+          db1.dev == db2.dev and
+          db1.type == db2.type
+        c_free(db2)
+      c_free(db1)
   else:
     var a, b: Stat
     if stat(path1, a) < 0'i32 or stat(path2, b) < 0'i32:
@@ -1603,6 +1666,20 @@ type
     fpOthersWrite,         ## write access for others
     fpOthersRead           ## read access for others
 
+when defined(plan9):
+  proc permissions(db: ptr Dir): set[FilePermission] =
+    if (db.mode and (DMREAD * 0100)) != 0: result.incl(fpUserRead)
+    if (db.mode and (DMWRITE * 0100)) != 0: result.incl(fpUserWrite)
+    if (db.mode and (DMEXEC * 0100)) != 0: result.incl(fpUserExec)
+
+    if (db.mode and (DMREAD * 010)) != 0: result.incl(fpGroupRead)
+    if (db.mode and (DMWRITE * 010)) != 0: result.incl(fpGroupWrite)
+    if (db.mode and (DMEXEC * 010)) != 0: result.incl(fpGroupExec)
+
+    if (db.mode and (DMREAD)) != 0: result.incl(fpOthersRead)
+    if (db.mode and (DMWRITE)) != 0: result.incl(fpOthersWrite)
+    if (db.mode and (DMEXEC)) != 0: result.incl(fpOthersExec)
+
 proc getFilePermissions*(filename: string): set[FilePermission] {.
   rtl, extern: "nos$1", tags: [ReadDirEffect], noWeirdTarget.} =
   ## Retrieves file permissions for `filename`.
@@ -1629,6 +1706,11 @@ proc getFilePermissions*(filename: string): set[FilePermission] {.
     if (a.st_mode and S_IROTH.Mode) != 0.Mode: result.incl(fpOthersRead)
     if (a.st_mode and S_IWOTH.Mode) != 0.Mode: result.incl(fpOthersWrite)
     if (a.st_mode and S_IXOTH.Mode) != 0.Mode: result.incl(fpOthersExec)
+  elif defined(plan9):
+    let db = dirstat(filename)
+    if db.isNil: raiseOSError(osLastError(), filename)
+    result = db.permissions
+    c_free(db)
   else:
     when useWinUnicode:
       wrapUnary(res, getFileAttributesW, filename)
@@ -1667,6 +1749,25 @@ proc setFilePermissions*(filename: string, permissions: set[FilePermission]) {.
     if fpOthersExec in permissions: p = p or S_IXOTH.Mode
 
     if chmod(filename, cast[Mode](p)) != 0: raiseOSError(osLastError(), $(filename, permissions))
+  elif defined(plan9):
+    var db: Dir
+    nulldir(db)
+    for fp in permissions:
+      let bits = case fp
+        of fpUserRead: DMREAD * 0100
+        of fpUserWrite: DMWRITE * 0100
+        of fpUserExec: DMEXEC * 0100
+
+        of fpGroupRead: DMREAD * 0010
+        of fpGroupWrite: DMWRITE * 0010
+        of fpGroupExec: DMEXEC * 0010
+
+        of fpOthersRead: DMREAD * 0001
+        of fpOthersWrite: DMWRITE * 0001
+        of fpOthersExec: DMEXEC * 0001
+      db.mode = db.mode or bits.culong
+    if dirwstat(filename, db) != 0:
+      raiseOSError(osLastError(), $(filename, permissions))
   else:
     when useWinUnicode:
       wrapUnary(res, getFileAttributesW, filename)
@@ -1794,6 +1895,8 @@ proc tryRemoveFile*(file: string): bool {.rtl, extern: "nos$1", tags: [WriteDirE
          setFileAttributes(f, FILE_ATTRIBUTE_NORMAL) != 0 and
          deleteFile(f) != 0:
         result = true
+  elif defined(plan9):
+    result = remove(file) != 0
   else:
     if unlink(file) != 0'i32 and errno != ENOENT:
       result = false
@@ -1828,6 +1931,8 @@ proc tryMoveFSObject(source, dest: string): bool {.noWeirdTarget.} =
       if moveFileExW(s, d, MOVEFILE_COPY_ALLOWED or MOVEFILE_REPLACE_EXISTING) == 0'i32: raiseOSError(osLastError(), $(source, dest))
     else:
       if moveFileExA(source, dest, MOVEFILE_COPY_ALLOWED or MOVEFILE_REPLACE_EXISTING) == 0'i32: raiseOSError(osLastError(), $(source, dest))
+  elif defined(plan9): discard
+    # Move not supported by 9P
   else:
     if c_rename(source, dest) != 0'i32:
       let err = osLastError()
@@ -1934,6 +2039,8 @@ template walkCommon(pattern: string, filter) =
           let errCode = getLastError()
           if errCode == ERROR_NO_MORE_FILES: break
           else: raiseOSError(errCode.OSErrorCode)
+  elif defined(plan9):
+    raiseAssert("Path globbing not implemented for Plan 9")
   else: # here we use glob
     var
       f: Glob
@@ -2031,6 +2138,10 @@ proc expandFilename*(filename: string): string {.rtl, extern: "nos$1",
       result = x
     if not fileExists(result) and not dirExists(result):
       # consider using: `raiseOSError(osLastError(), result)`
+      raise newException(OSError, "file '" & result & "' does not exist")
+  elif defined(plan9):
+    result = absolutePath(filename)
+    if access(result, AEXIST) != 0:
       raise newException(OSError, "file '" & result & "' does not exist")
   else:
     # according to Posix we don't need to allocate space for result pathname.
@@ -2135,6 +2246,28 @@ iterator walkDir*(dir: string; relative = false, checkDir = false):
             let errCode = getLastError()
             if errCode == ERROR_NO_MORE_FILES: break
             else: raiseOSError(errCode.OSErrorCode)
+    elif defined(plan9):
+      var
+        kind: PathComponent
+        path: string
+        pathBaseLen: int
+        db: ptr UncheckedArray[Dir]
+      let fd = open(dir, OREAD)
+      if fd == -1: raiseOSError(osLastError(), dir)
+      let n = dirreadall(fd, db)
+      discard close(fd)
+      if n < 0: raiseOSError(osLastError(), dir)
+      if not relative:
+        path.add(dir)
+        path.add('/')
+        pathBaseLen = path.len
+      path.add(dir)
+      for i in 0..<n:
+        kind = if (db[i].qid.type and QTDIR) == 0: pcFile else: pcDir
+        path.setLen pathBaseLen
+        path.add db[i].name
+        yield (kind, path)
+      c_free(db)
     else:
       var d = opendir(dir)
       if d == nil:
@@ -2237,6 +2370,8 @@ proc rawRemoveDir(dir: string) {.noWeirdTarget.} =
     if res == 0'i32 and lastError.int32 != 3'i32 and
         lastError.int32 != 18'i32 and lastError.int32 != 2'i32:
       raiseOSError(lastError, dir)
+  elif defined(plan9):
+    if remove(dir) != 0: raiseOSError(osLastError(), dir)
   else:
     if rmdir(dir) != 0'i32 and errno != ENOENT: raiseOSError(osLastError(), dir)
 
@@ -2296,6 +2431,13 @@ proc rawCreateDir(dir: string): bool {.noWeirdTarget.} =
     else:
       #echo res
       raiseOSError(osLastError(), dir)
+  elif defined(plan9):
+    if access(dir, AEXIST) != 0:
+      const mode = 0777
+      let f = create(dir, OREAD, DMDIR or mode)
+      if f < 0: raiseOSError(osLastError(), dir)
+      discard close(f)
+      result = true
   else:
     when useWinUnicode:
       wrapUnary(res, createDirectoryW, dir)
@@ -2434,6 +2576,8 @@ proc createSymlink*(src, dest: string) {.noWeirdTarget.} =
     else:
       if createSymbolicLinkA(dest, src, flag) == 0 or getLastError() != 0:
         raiseOSError(osLastError(), $(src, dest))
+  elif defined(plan9):
+    raiseAssert("symlinks not supported on Plan 9")
   else:
     if symlink(src, dest) != 0:
       raiseOSError(osLastError(), $(src, dest))
@@ -2456,6 +2600,8 @@ proc createHardlink*(src, dest: string) {.noWeirdTarget.} =
     else:
       if createHardLinkA(dest, src, nil) == 0:
         raiseOSError(osLastError(), $(src, dest))
+  elif defined(plan9):
+    raiseAssert("hard links not supported on Plan 9")
   else:
     if link(src, dest) != 0:
       raiseOSError(osLastError(), $(src, dest))
@@ -2557,11 +2703,11 @@ proc exclFilePermissions*(filename: string,
 proc expandSymlink*(symlinkPath: string): string {.noWeirdTarget.} =
   ## Returns a string representing the path to which the symbolic link points.
   ##
-  ## On Windows this is a noop, ``symlinkPath`` is simply returned.
+  ## On Windows and Plan 9 this is a noop, ``symlinkPath`` is simply returned.
   ##
   ## See also:
   ## * `createSymlink proc <#createSymlink,string,string>`_
-  when defined(windows):
+  when defined(windows) or defined(plan9):
     result = symlinkPath
   else:
     result = newString(maxSymlinkLen)
@@ -2823,7 +2969,8 @@ else:
   "commandLineParams() unsupported by dynamic libraries".} =
     discard
 
-when not weirdTarget and (defined(freebsd) or defined(dragonfly) or defined(netbsd)):
+when not weirdTarget and not defined(plan9) and
+    (defined(freebsd) or defined(dragonfly) or defined(netbsd)):
   proc sysctl(name: ptr cint, namelen: cuint, oldp: pointer, oldplen: ptr csize_t,
               newp: pointer, newplen: csize_t): cint
        {.importc: "sysctl",header: """#include <sys/types.h>
@@ -2900,7 +3047,7 @@ when not weirdTarget and defined(openbsd):
         return expandFilename(result)
 
       # search in path
-      for p in split(string(getEnv("PATH")), {PathSep}):
+      for p in split(string(getEnv(PATH)), {PathSep}):
         var x = joinPath(p, exePath)
         if fileExists(x):
           return expandFilename(x)
@@ -2915,7 +3062,7 @@ when not (defined(windows) or defined(macosx) or weirdTarget):
       # as it has been executed by the calling process
       if len(result) > 0 and result[0] != DirSep: # not an absolute path?
         # iterate over any path in the $PATH environment variable
-        for p in split(string(getEnv("PATH")), {PathSep}):
+        for p in split(string(getEnv(PATH)), {PathSep}):
           var x = joinPath(p, result)
           if fileExists(x): return x
     else:
@@ -3028,6 +3175,9 @@ proc sleep*(milsecs: int) {.rtl, extern: "nos$1", tags: [TimeEffect], noWeirdTar
   ## Sleeps `milsecs` milliseconds.
   when defined(windows):
     winlean.sleep(int32(milsecs))
+  elif defined(plan9):
+    if plan9.sleep(milsecs) == -1:
+      raiseOSError(osLastError(), $milsecs)
   else:
     var a, b: Timespec
     a.tv_sec = posix.Time(milsecs div 1000)
@@ -3044,6 +3194,11 @@ proc getFileSize*(file: string): BiggestInt {.rtl, extern: "nos$1",
     if resA == -1: raiseOSError(osLastError(), file)
     result = rdFileSize(a)
     findClose(resA)
+  elif defined(plan9):
+    var db = dirstat(file)
+    if db.isNil: raiseOSError(osLastError(), file)
+    result = BiggestInt db.length
+    c_free(db)
   else:
     var f: File
     if open(f, file):
@@ -3055,6 +3210,10 @@ when defined(Windows) or weirdTarget:
   type
     DeviceId* = int32
     FileId* = int64
+elif defined(plan9):
+  type
+    DeviceId* = cuint
+    FileId* = cuvlong
 else:
   type
     DeviceId* = Dev
@@ -3077,67 +3236,78 @@ type
     lastWriteTime*: times.Time        ## Time file was last modified/written to.
     creationTime*: times.Time         ## Time file was created. Not supported on all systems!
 
-template rawToFormalFileInfo(rawInfo, path, formalInfo): untyped =
-  ## Transforms the native file info structure into the one nim uses.
-  ## 'rawInfo' is either a 'BY_HANDLE_FILE_INFORMATION' structure on Windows,
-  ## or a 'Stat' structure on posix
-  when defined(Windows):
-    template merge(a, b): untyped = a or (b shl 32)
-    formalInfo.id.device = rawInfo.dwVolumeSerialNumber
-    formalInfo.id.file = merge(rawInfo.nFileIndexLow, rawInfo.nFileIndexHigh)
-    formalInfo.size = merge(rawInfo.nFileSizeLow, rawInfo.nFileSizeHigh)
-    formalInfo.linkCount = rawInfo.nNumberOfLinks
-    formalInfo.lastAccessTime = fromWinTime(rdFileTime(rawInfo.ftLastAccessTime))
-    formalInfo.lastWriteTime = fromWinTime(rdFileTime(rawInfo.ftLastWriteTime))
-    formalInfo.creationTime = fromWinTime(rdFileTime(rawInfo.ftCreationTime))
+when defined(plan9):
+  proc fileInfo(db: ptr Dir): FileInfo =
+    result.id = (db.dev, db.qid.path)
+    result.kind = if (db.qid.type and QTDIR) != 0: pcDir else: pcFile
+    result.size = db.length.BiggestInt
+    result.permissions = db.permissions
+    result.lastAccessTime = fromPlan9Seconds db.atime
+    result.lastWriteTime = fromPlan9Seconds db.mtime
+    result.creationTime = fromPlan9Seconds db.mtime
 
-    # Retrieve basic permissions
-    if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_READONLY) != 0'i32:
-      formalInfo.permissions = {fpUserExec, fpUserRead, fpGroupExec,
-                                fpGroupRead, fpOthersExec, fpOthersRead}
-    else:
-      formalInfo.permissions = {fpUserExec..fpOthersRead}
+else:
+  template rawToFormalFileInfo(rawInfo, path, formalInfo): untyped =
+    ## Transforms the native file info structure into the one nim uses.
+    ## 'rawInfo' is either a 'BY_HANDLE_FILE_INFORMATION' structure on Windows,
+    ## or a 'Stat' structure on posix
+    when defined(Windows):
+      template merge(a, b): untyped = a or (b shl 32)
+      formalInfo.id.device = rawInfo.dwVolumeSerialNumber
+      formalInfo.id.file = merge(rawInfo.nFileIndexLow, rawInfo.nFileIndexHigh)
+      formalInfo.size = merge(rawInfo.nFileSizeLow, rawInfo.nFileSizeHigh)
+      formalInfo.linkCount = rawInfo.nNumberOfLinks
+      formalInfo.lastAccessTime = fromWinTime(rdFileTime(rawInfo.ftLastAccessTime))
+      formalInfo.lastWriteTime = fromWinTime(rdFileTime(rawInfo.ftLastWriteTime))
+      formalInfo.creationTime = fromWinTime(rdFileTime(rawInfo.ftCreationTime))
 
-    # Retrieve basic file kind
-    if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) != 0'i32:
-      formalInfo.kind = pcDir
-    else:
-      formalInfo.kind = pcFile
-    if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32:
-      formalInfo.kind = succ(formalInfo.kind)
-
-  else:
-    template checkAndIncludeMode(rawMode, formalMode: untyped) =
-      if (rawInfo.st_mode and rawMode.Mode) != 0.Mode:
-        formalInfo.permissions.incl(formalMode)
-    formalInfo.id = (rawInfo.st_dev, rawInfo.st_ino)
-    formalInfo.size = rawInfo.st_size
-    formalInfo.linkCount = rawInfo.st_nlink.BiggestInt
-    formalInfo.lastAccessTime = rawInfo.st_atim.toTime
-    formalInfo.lastWriteTime = rawInfo.st_mtim.toTime
-    formalInfo.creationTime = rawInfo.st_ctim.toTime
-
-    formalInfo.permissions = {}
-    checkAndIncludeMode(S_IRUSR, fpUserRead)
-    checkAndIncludeMode(S_IWUSR, fpUserWrite)
-    checkAndIncludeMode(S_IXUSR, fpUserExec)
-
-    checkAndIncludeMode(S_IRGRP, fpGroupRead)
-    checkAndIncludeMode(S_IWGRP, fpGroupWrite)
-    checkAndIncludeMode(S_IXGRP, fpGroupExec)
-
-    checkAndIncludeMode(S_IROTH, fpOthersRead)
-    checkAndIncludeMode(S_IWOTH, fpOthersWrite)
-    checkAndIncludeMode(S_IXOTH, fpOthersExec)
-
-    formalInfo.kind =
-      if S_ISDIR(rawInfo.st_mode):
-        pcDir
-      elif S_ISLNK(rawInfo.st_mode):
-        assert(path != "") # symlinks can't occur for file handles
-        getSymlinkFileKind(path)
+      # Retrieve basic permissions
+      if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_READONLY) != 0'i32:
+        formalInfo.permissions = {fpUserExec, fpUserRead, fpGroupExec,
+                                  fpGroupRead, fpOthersExec, fpOthersRead}
       else:
-        pcFile
+        formalInfo.permissions = {fpUserExec..fpOthersRead}
+
+      # Retrieve basic file kind
+      if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) != 0'i32:
+        formalInfo.kind = pcDir
+      else:
+        formalInfo.kind = pcFile
+      if (rawInfo.dwFileAttributes and FILE_ATTRIBUTE_REPARSE_POINT) != 0'i32:
+        formalInfo.kind = succ(formalInfo.kind)
+
+    else:
+      template checkAndIncludeMode(rawMode, formalMode: untyped) =
+        if (rawInfo.st_mode and rawMode.Mode) != 0.Mode:
+          formalInfo.permissions.incl(formalMode)
+      formalInfo.id = (rawInfo.st_dev, rawInfo.st_ino)
+      formalInfo.size = rawInfo.st_size
+      formalInfo.linkCount = rawInfo.st_nlink.BiggestInt
+      formalInfo.lastAccessTime = rawInfo.st_atim.toTime
+      formalInfo.lastWriteTime = rawInfo.st_mtim.toTime
+      formalInfo.creationTime = rawInfo.st_ctim.toTime
+
+      formalInfo.permissions = {}
+      checkAndIncludeMode(S_IRUSR, fpUserRead)
+      checkAndIncludeMode(S_IWUSR, fpUserWrite)
+      checkAndIncludeMode(S_IXUSR, fpUserExec)
+
+      checkAndIncludeMode(S_IRGRP, fpGroupRead)
+      checkAndIncludeMode(S_IWGRP, fpGroupWrite)
+      checkAndIncludeMode(S_IXGRP, fpGroupExec)
+
+      checkAndIncludeMode(S_IROTH, fpOthersRead)
+      checkAndIncludeMode(S_IWOTH, fpOthersWrite)
+      checkAndIncludeMode(S_IXOTH, fpOthersExec)
+
+      formalInfo.kind =
+        if S_ISDIR(rawInfo.st_mode):
+          pcDir
+        elif S_ISLNK(rawInfo.st_mode):
+          assert(path != "") # symlinks can't occur for file handles
+          getSymlinkFileKind(path)
+        else:
+          pcFile
 
 when defined(js):
   when not declared(FileHandle):
@@ -3165,6 +3335,11 @@ proc getFileInfo*(handle: FileHandle): FileInfo {.noWeirdTarget.} =
     if getFileInformationByHandle(realHandle, addr rawInfo) == 0:
       raiseOSError(osLastError(), $handle)
     rawToFormalFileInfo(rawInfo, "", result)
+  elif defined(plan9):
+    var db = dirfstat(handle)
+    if db.isNil: raiseOSError(osLastError(), $handle)
+    result = db.fileInfo
+    c_free(db)
   else:
     var rawInfo: Stat
     if fstat(handle, rawInfo) < 0'i32:
@@ -3209,6 +3384,11 @@ proc getFileInfo*(path: string, followSymlink = true): FileInfo {.noWeirdTarget.
       raiseOSError(osLastError(), path)
     rawToFormalFileInfo(rawInfo, path, result)
     discard closeHandle(handle)
+  elif defined(plan9):
+    var db = dirstat(path)
+    if db.isNil: raiseOSError(osLastError(), path)
+    result = db.fileInfo
+    c_free(db)
   else:
     var rawInfo: Stat
     if followSymlink:
@@ -3245,6 +3425,8 @@ proc isHidden*(path: string): bool {.noWeirdTarget.} =
       var attributes = getFileAttributesA(path)
     if attributes != -1'i32:
       result = (attributes and FILE_ATTRIBUTE_HIDDEN) != 0'i32
+  elif defined(plan9):
+    discard # The UNIX '.' bug was fixed in Plan 9.
   else:
     let fileName = lastPathPart(path)
     result = len(fileName) >= 2 and fileName[0] == '.' and fileName != ".."
@@ -3259,7 +3441,7 @@ proc getCurrentProcessId*(): int {.noWeirdTarget.} =
                                         importc: "GetCurrentProcessId".}
     result = GetCurrentProcessId().int
   else:
-    result = getpid()
+    result = int getpid()
 
 proc setLastModificationTime*(file: string, t: times.Time) {.noWeirdTarget.} =
   ## Sets the `file`'s last modification time. `OSError` is raised in case of
@@ -3270,6 +3452,12 @@ proc setLastModificationTime*(file: string, t: times.Time) {.noWeirdTarget.} =
     var timevals = [Timeval(tv_sec: unixt, tv_usec: micro),
       Timeval(tv_sec: unixt, tv_usec: micro)] # [last access, last modification]
     if utimes(file, timevals.addr) != 0: raiseOSError(osLastError(), file)
+  elif defined(plan9):
+    var db: Dir
+    nulldir(db)
+    db.mtime = t.toUnix.culong
+    if dirwstat(file, db) != 0:
+      raiseOSError(osLastError(), $file)
   else:
     let h = openHandle(path = file, writeAccess = true)
     if h == INVALID_HANDLE_VALUE: raiseOSError(osLastError(), file)

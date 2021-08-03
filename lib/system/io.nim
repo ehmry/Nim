@@ -63,6 +63,10 @@ else:
 when defined(windows):
   proc c_fileno(f: File): cint {.
     importc: "_fileno", header: "<stdio.h>".}
+elif defined(plan9):
+  import plan9
+  proc c_fileno(f: File): cint {.
+    importc: "fileno", header: "<stdio.h>".}
 else:
   proc c_fileno(f: File): cint {.
     importc: "fileno", header: "<fcntl.h>".}
@@ -143,20 +147,21 @@ proc raiseEOF() {.noinline, noreturn.} =
 
 proc strerror(errnum: cint): cstring {.importc, header: "<string.h>".}
 
-when not defined(NimScript):
+when not defined(NimScript) and not defined(plan9):
   var
     errno {.importc, header: "<errno.h>".}: cint ## error variable
     EINTR {.importc: "EINTR", header: "<errno.h>".}: cint
 
 proc checkErr(f: File) =
-  when not defined(NimScript):
-    if c_ferror(f) != 0:
-      let msg = "errno: " & $errno & " `" & $strerror(errno) & "`"
-      c_clearerr(f)
-      raiseEIO(msg)
-  else:
-    # shouldn't happen
-    quit(1)
+  when not defined(plan9):
+    when not defined(NimScript):
+      if c_ferror(f) != 0:
+        let msg = "errno: " & $errno & " `" & $strerror(errno) & "`"
+        c_clearerr(f)
+        raiseEIO(msg)
+    else:
+      # shouldn't happen
+      quit(1)
 
 {.push stackTrace:off, profiler:off.}
 proc readBuffer*(f: File, buffer: pointer, len: Natural): int {.
@@ -363,8 +368,12 @@ proc readLine*(f: File, line: var TaintedString): bool {.tags: [ReadIOEffect],
   ## character(s) are not part of the returned string. Returns ``false``
   ## if the end of the file has been reached, ``true`` otherwise. If
   ## ``false`` is returned `line` contains no new data.
-  proc c_memchr(s: pointer, c: cint, n: csize_t): pointer {.
-    importc: "memchr", header: "<string.h>".}
+  when defined(plan9):
+    proc c_memchr(s: pointer, c: cint, n: culong): pointer {.
+      importc: "memchr".}
+  else:
+    proc c_memchr(s: pointer, c: cint, n: csize_t): pointer {.
+      importc: "memchr", header: "<string.h>".}
 
   when defined(windows) and not defined(useWinAnsi):
     proc readConsole(hConsoleInput: FileHandle, lpBuffer: pointer,
@@ -445,7 +454,7 @@ proc readLine*(f: File, line: var TaintedString): bool {.tags: [ReadIOEffect],
       # likely other io procs need this for correctness.
       fgetsSuccess = c_fgets(addr line.string[pos], sp.cint, f) != nil
       if fgetsSuccess: break
-      when not defined(NimScript):
+      when not defined(NimScript) and not defined(plan9):
         if errno == EINTR:
           errno = 0
           c_clearerr(f)
@@ -650,7 +659,7 @@ when defined(posix) and not defined(nimscript):
       ## Test for a directory.
       (m and 0o170000) == 0o40000
 
-  else:
+  elif not defined(plan9):
     type
       Mode {.importc: "mode_t", header: "<sys/types.h>".} = cint
 
@@ -729,6 +738,12 @@ proc open*(f: var File, filehandle: FileHandle,
   f = c_fdopen(filehandle, FormatOpen[mode])
   result = f != nil
 
+template raiseOpenError(filename: string): untyped =
+  when defined(plan9):
+    sysFatal(IOError, errstr() & ": " & filename)
+  else:
+    sysFatal(IOError, "cannot open: " & filename)
+
 proc open*(filename: string,
             mode: FileMode = fmRead, bufSize: int = -1): File =
   ## Opens a file named `filename` with given `mode`.
@@ -738,7 +753,7 @@ proc open*(filename: string,
   ##
   ## The file handle associated with the resulting ``File`` is not inheritable.
   if not open(result, filename, mode, bufSize):
-    sysFatal(IOError, "cannot open: " & filename)
+    raiseOpenError(filename)
 
 proc setFilePos*(f: File, pos: int64, relativeTo: FileSeekPos = fspSet) {.benign.} =
   ## sets the position of the file pointer that is used for read/write
@@ -778,7 +793,7 @@ when declared(stdout):
 
   const stdOutLock = not defined(windows) and not defined(android) and
                      not defined(nintendoswitch) and not defined(freertos) and
-                     hostOS != "any"
+                     not defined(plan9) and hostOS != "any"
 
   proc echoBinSafe(args: openArray[string]) {.compilerproc.} =
     when defined(androidNDK):
@@ -846,7 +861,7 @@ proc readFile*(filename: string): TaintedString {.tags: [ReadIOEffect], benign.}
     finally:
       close(f)
   else:
-    sysFatal(IOError, "cannot open: " & filename)
+    raiseOpenError(filename)
 
 proc writeFile*(filename, content: string) {.tags: [WriteIOEffect], benign.} =
   ## Opens a file named `filename` for writing. Then writes the
@@ -859,7 +874,7 @@ proc writeFile*(filename, content: string) {.tags: [WriteIOEffect], benign.} =
     finally:
       close(f)
   else:
-    sysFatal(IOError, "cannot open: " & filename)
+    raiseOpenError(filename)
 
 proc writeFile*(filename: string, content: openArray[byte]) {.since: (1, 1).} =
   ## Opens a file named `filename` for writing. Then writes the
@@ -872,7 +887,7 @@ proc writeFile*(filename: string, content: openArray[byte]) {.since: (1, 1).} =
     finally:
       close(f)
   else:
-    raise newException(IOError, "cannot open: " & filename)
+    raiseOpenError(filename)
 
 proc readLines*(filename: string, n: Natural): seq[TaintedString] =
   ## read `n` lines from the file named `filename`. Raises an IO exception
@@ -889,7 +904,7 @@ proc readLines*(filename: string, n: Natural): seq[TaintedString] =
     finally:
       close(f)
   else:
-    sysFatal(IOError, "cannot open: " & filename)
+    raiseOpenError(filename)
 
 template readLines*(filename: string): seq[TaintedString] {.deprecated: "use readLines with two arguments".} =
   readLines(filename, 1)

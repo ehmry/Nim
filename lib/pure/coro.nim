@@ -55,6 +55,10 @@ elif defined(haiku) or defined(openbsd):
     {.warning: "ucontext coroutine backend is not available on haiku, defaulting to setjmp".}
 elif defined(nimCoroutinesSetjmp) or defined(nimCoroutinesSetjmpBundled):
   const coroBackend = CORO_BACKEND_SETJMP
+  when defined(plan9):
+    {.pragma: setjmpheader.}
+  else:
+    {.pragma: setjmpheader, header: "<setjmp.h>".}
 else:
   const coroBackend = CORO_BACKEND_UCONTEXT
 
@@ -115,10 +119,10 @@ elif coroBackend == CORO_BACKEND_SETJMP:
   else:
     # Use setjmp/longjmp implementation provided by the system.
     type
-      JmpBuf {.importc: "jmp_buf", header: "<setjmp.h>".} = object
+      JmpBuf {.importc: "jmp_buf", setjmpheader.} = object
 
-    proc setjmp(ctx: var JmpBuf): int {.importc, header: "<setjmp.h>".}
-    proc longjmp(ctx: JmpBuf, ret = 1) {.importc, header: "<setjmp.h>".}
+    proc setjmp(ctx: var JmpBuf): int {.importc, setjmpheader.}
+    proc longjmp(ctx: JmpBuf, ret = 1) {.importc, setjmpheader.}
 
   type
     Context = JmpBuf

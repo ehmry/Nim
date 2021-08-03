@@ -197,6 +197,12 @@ elif defined(nintendoswitch) or defined(freertos):
     cstderr.rawWrite("\n")
     quit(1)
 
+elif defined(plan9):
+  # Not supported on Plan 9
+  proc nimUnloadLibrary(lib: LibHandle) = discard
+  proc nimLoadLibrary(path: string): LibHandle = discard
+  proc nimGetProcAddr(lib: LibHandle, name: cstring): ProcAddr = discard
+
 else:
   {.error: "no implementation for dyncalls".}
 
