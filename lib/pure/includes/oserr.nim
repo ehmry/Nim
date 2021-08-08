@@ -12,7 +12,9 @@ when not defined(nimscript) and not defined(plan9):
   when defined(windows):
     import winlean
 
-when not defined(plan9):
+when defined(plan9):
+  proc errorCode*(ose: ref OSError): int = discard
+else:
   proc `==`*(err1, err2: OSErrorCode): bool {.borrow.}
   proc `$`*(err: OSErrorCode): string {.borrow.}
 
