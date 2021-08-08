@@ -206,9 +206,19 @@ when defined(windows):
     if f == stderr: term.hStderr else: term.hStdout
 
 elif defined(plan9):
-  # pretend this is the '70s
-  proc terminalWidth*(): int = 80
-  proc terminalHeight*(): int = 50
+  # see vt(1)
+  import os, parseutils
+
+  # var isInsideVt = fileExists "/dev/TERM"
+
+  proc terminalWidth*(): int =
+    let p = "/env/COLS"
+    if fileExists p:
+      result = p.readFile.parseInt(result)
+  proc terminalHeight*(): int =
+    let p = "/env/LINES"
+    if fileExists p:
+      result = p.readFile.parseInt(result)
 
 else:
   import termios, posix, os, parseutils
