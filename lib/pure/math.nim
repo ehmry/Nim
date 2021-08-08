@@ -271,17 +271,18 @@ when not defined(js): # C
     ##  echo sqrt(4.0)  ## 2.0
     ##  echo sqrt(1.44) ## 1.2
     ##  echo sqrt(-4.0) ## nan
-  proc cbrt*(x: float32): float32 {.importc: "cbrtf", mathH.}
-  proc cbrt*(x: float64): float64 {.importc: "cbrt", mathH.}
-    ## Computes the cubic root of ``x``.
-    ##
-    ## See also:
-    ## * `sqrt proc <#sqrt,float64>`_ for square root
-    ##
-    ## .. code-block:: nim
-    ##  echo cbrt(8.0)   ## 2.0
-    ##  echo cbrt(2.197) ## 1.3
-    ##  echo cbrt(-27.0) ## -3.0
+  when not defined(plan9):
+    proc cbrt*(x: float32): float32 {.importc: "cbrtf", mathH.}
+    proc cbrt*(x: float64): float64 {.importc: "cbrt", mathH.}
+      ## Computes the cubic root of ``x``.
+      ##
+      ## See also:
+      ## * `sqrt proc <#sqrt,float64>`_ for square root
+      ##
+      ## .. code-block:: nim
+      ##  echo cbrt(8.0)   ## 2.0
+      ##  echo cbrt(2.197) ## 1.3
+      ##  echo cbrt(-27.0) ## -3.0
   proc ln*(x: float32): float32 {.importc: "logf", mathH.}
   proc ln*(x: float64): float64 {.importc: "log", mathH.}
     ## Computes the `natural logarithm <https://en.wikipedia.org/wiki/Natural_logarithm>`_
@@ -493,15 +494,16 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo arctan2(1.0, 0.0) ## 1.570796326794897
     ##  echo radToDeg(arctan2(1.0, 0.0)) ## 90.0
-  proc arcsinh*(x: float32): float32 {.importc: "asinhf", mathH.}
-  proc arcsinh*(x: float64): float64 {.importc: "asinh", mathH.}
-    ## Computes the inverse hyperbolic sine of ``x``.
-  proc arccosh*(x: float32): float32 {.importc: "acoshf", mathH.}
-  proc arccosh*(x: float64): float64 {.importc: "acosh", mathH.}
-    ## Computes the inverse hyperbolic cosine of ``x``.
-  proc arctanh*(x: float32): float32 {.importc: "atanhf", mathH.}
-  proc arctanh*(x: float64): float64 {.importc: "atanh", mathH.}
-    ## Computes the inverse hyperbolic tangent of ``x``.
+  when not defined(plan9):
+    proc arcsinh*(x: float32): float32 {.importc: "asinhf", mathH.}
+    proc arcsinh*(x: float64): float64 {.importc: "asinh", mathH.}
+      ## Computes the inverse hyperbolic sine of ``x``.
+    proc arccosh*(x: float32): float32 {.importc: "acoshf", mathH.}
+    proc arccosh*(x: float64): float64 {.importc: "acosh", mathH.}
+      ## Computes the inverse hyperbolic cosine of ``x``.
+    proc arctanh*(x: float32): float32 {.importc: "atanhf", mathH.}
+    proc arctanh*(x: float64): float64 {.importc: "atanh", mathH.}
+      ## Computes the inverse hyperbolic tangent of ``x``.
 
 else: # JS
   proc log10*(x: float32): float32 {.importc: "Math.log10", nodecl.}
@@ -549,12 +551,13 @@ proc arcsec*[T: float32|float64](x: T): T = arccos(1.0 / x)
 proc arccsc*[T: float32|float64](x: T): T = arcsin(1.0 / x)
   ## Computes the inverse cosecant of ``x``.
 
-proc arccoth*[T: float32|float64](x: T): T = arctanh(1.0 / x)
-  ## Computes the inverse hyperbolic cotangent of ``x``.
-proc arcsech*[T: float32|float64](x: T): T = arccosh(1.0 / x)
-  ## Computes the inverse hyperbolic secant of ``x``.
-proc arccsch*[T: float32|float64](x: T): T = arcsinh(1.0 / x)
-  ## Computes the inverse hyperbolic cosecant of ``x``.
+when not defined(plan9):
+  proc arccoth*[T: float32|float64](x: T): T = arctanh(1.0 / x)
+    ## Computes the inverse hyperbolic cotangent of ``x``.
+  proc arcsech*[T: float32|float64](x: T): T = arccosh(1.0 / x)
+    ## Computes the inverse hyperbolic secant of ``x``.
+  proc arccsch*[T: float32|float64](x: T): T = arcsinh(1.0 / x)
+    ## Computes the inverse hyperbolic cosecant of ``x``.
 
 const windowsCC89 = defined(windows) and defined(bcc)
 
@@ -582,7 +585,7 @@ when not defined(js): # C
     ##  echo pow(16.0, 0.5) ## 4.0
 
   # TODO: add C89 version on windows
-  when not windowsCC89:
+  when not windowsCC89 and not defined(plan9):
     proc erf*(x: float32): float32 {.importc: "erff", mathH.}
     proc erf*(x: float64): float64 {.importc: "erf", mathH.}
       ## Computes the `error function <https://en.wikipedia.org/wiki/Error_function>`_ for ``x``.
@@ -651,7 +654,7 @@ when not defined(js): # C
     ##  echo ceil(2.9)  ## 3.0
     ##  echo ceil(-2.1) ## -2.0
 
-  when windowsCC89:
+  when windowsCC89 or defined(plan9):
     # MSVC 2010 don't have trunc/truncf
     # this implementation was inspired by Go-lang Math.Trunc
     proc truncImpl(f: float64): float64 =
@@ -854,7 +857,7 @@ when not defined(js):
     result = c_frexp(x, exp)
     exponent = exp
 
-  when windowsCC89:
+  when windowsCC89 or defined(plan9):
     # taken from Go-lang Math.Log2
     const ln2 = 0.693147180559945309417232121458176568075500134360255254120680009
     template log2Impl[T](x: T): T =
