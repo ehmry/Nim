@@ -277,8 +277,6 @@ proc waitpid(): cint {.libc.}
 proc `==`*(x, y: Pid): bool {.borrow.}
 proc `$`*(id: Pid): string {.borrow.}
 
-proc c_free*(p: pointer) {.importc: "free".}
-
 {.pop.}
 
 proc cSystem*(command: string): cint =

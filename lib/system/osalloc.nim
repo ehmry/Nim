@@ -280,6 +280,19 @@ elif defined(windows) and not defined(StandaloneHeapSize):
         quit 1
     #VirtualFree(p, size, MEM_DECOMMIT)
 
+elif defined(plan9) and not defined(StandaloneHeapSize):
+  # Use the libc allocator.
+  proc malloc(size: culong): pointer {.importc.}
+  proc free(p: pointer) {.importc.}
+
+  proc osTryAllocPages(size: int): pointer {.inline.} = malloc(culong size)
+
+  proc osAllocPages(size: int): pointer {.inline.} =
+    result = malloc(culong size)
+    if result.isNil: raiseOutOfMem()
+
+  proc osDeallocPages(p: pointer; size: int) {.inline.} = free(p)
+
 elif hostOS == "standalone" or defined(StandaloneHeapSize):
   const StandaloneHeapSize {.intdefine.}: int = 1024 * PageSize
   var

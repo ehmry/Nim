@@ -12,6 +12,7 @@ when defined(plan9):
   {.pragma: stringh.}
   proc c_getenv(name: cstring): cstring {.importc: "getenv".}
   proc c_putenv(name, val: cstring): cint {.importc: "putenv".}
+  proc c_free(p: pointer) {.importc: "free".}
 
 else:
   {.pragma: stringh, header: "<string.h>".}
