@@ -251,10 +251,17 @@ proc cumsum*[T](x: var openArray[T]) =
     doAssert a == @[1, 3, 6, 10]
   for i in 1 ..< x.len: x[i] = x[i-1] + x[i]
 
+when not defined(js):
+  when defined(plan9):
+    {.pragma: mathH.}
+  else:
+    {.pragma: mathH, header: "<math.h>".}
+
 {.push noSideEffect.}
 when not defined(js): # C
-  proc sqrt*(x: float32): float32 {.importc: "sqrtf", header: "<math.h>".}
-  proc sqrt*(x: float64): float64 {.importc: "sqrt", header: "<math.h>".}
+
+  proc sqrt*(x: float32): float32 {.importc: "sqrtf", mathH.}
+  proc sqrt*(x: float64): float64 {.importc: "sqrt", mathH.}
     ## Computes the square root of ``x``.
     ##
     ## See also:
@@ -264,8 +271,8 @@ when not defined(js): # C
     ##  echo sqrt(4.0)  ## 2.0
     ##  echo sqrt(1.44) ## 1.2
     ##  echo sqrt(-4.0) ## nan
-  proc cbrt*(x: float32): float32 {.importc: "cbrtf", header: "<math.h>".}
-  proc cbrt*(x: float64): float64 {.importc: "cbrt", header: "<math.h>".}
+  proc cbrt*(x: float32): float32 {.importc: "cbrtf", mathH.}
+  proc cbrt*(x: float64): float64 {.importc: "cbrt", mathH.}
     ## Computes the cubic root of ``x``.
     ##
     ## See also:
@@ -275,8 +282,8 @@ when not defined(js): # C
     ##  echo cbrt(8.0)   ## 2.0
     ##  echo cbrt(2.197) ## 1.3
     ##  echo cbrt(-27.0) ## -3.0
-  proc ln*(x: float32): float32 {.importc: "logf", header: "<math.h>".}
-  proc ln*(x: float64): float64 {.importc: "log", header: "<math.h>".}
+  proc ln*(x: float32): float32 {.importc: "logf", mathH.}
+  proc ln*(x: float64): float64 {.importc: "log", mathH.}
     ## Computes the `natural logarithm <https://en.wikipedia.org/wiki/Natural_logarithm>`_
     ## of ``x``.
     ##
@@ -319,8 +326,8 @@ proc log*[T: SomeFloat](x, base: T): T =
   ln(x) / ln(base)
 
 when not defined(js): # C
-  proc log10*(x: float32): float32 {.importc: "log10f", header: "<math.h>".}
-  proc log10*(x: float64): float64 {.importc: "log10", header: "<math.h>".}
+  proc log10*(x: float32): float32 {.importc: "log10f", mathH.}
+  proc log10*(x: float64): float64 {.importc: "log10", mathH.}
     ## Computes the common logarithm (base 10) of ``x``.
     ##
     ## See also:
@@ -333,8 +340,8 @@ when not defined(js): # C
     ##  echo log10(100.0)  ## 2.0
     ##  echo log10(0.0)    ## nan
     ##  echo log10(-100.0) ## -inf
-  proc exp*(x: float32): float32 {.importc: "expf", header: "<math.h>".}
-  proc exp*(x: float64): float64 {.importc: "exp", header: "<math.h>".}
+  proc exp*(x: float32): float32 {.importc: "expf", mathH.}
+  proc exp*(x: float64): float64 {.importc: "exp", mathH.}
     ## Computes the exponential function of ``x`` (e^x).
     ##
     ## See also:
@@ -348,8 +355,8 @@ when not defined(js): # C
     ##  echo ln(exp(4.0)) ## 4.0
     ##  echo exp(0.0)     ## 1.0
     ##  echo exp(-1.0)    ## 0.3678794411714423
-  proc sin*(x: float32): float32 {.importc: "sinf", header: "<math.h>".}
-  proc sin*(x: float64): float64 {.importc: "sin", header: "<math.h>".}
+  proc sin*(x: float32): float32 {.importc: "sinf", mathH.}
+  proc sin*(x: float64): float64 {.importc: "sin", mathH.}
     ## Computes the sine of ``x``.
     ##
     ## See also:
@@ -361,8 +368,8 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo sin(PI / 6)         ## 0.4999999999999999
     ##  echo sin(degToRad(90.0)) ## 1.0
-  proc cos*(x: float32): float32 {.importc: "cosf", header: "<math.h>".}
-  proc cos*(x: float64): float64 {.importc: "cos", header: "<math.h>".}
+  proc cos*(x: float32): float32 {.importc: "cosf", mathH.}
+  proc cos*(x: float64): float64 {.importc: "cos", mathH.}
     ## Computes the cosine of ``x``.
     ##
     ## See also:
@@ -374,8 +381,8 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo cos(2 * PI)         ## 1.0
     ##  echo cos(degToRad(60.0)) ## 0.5000000000000001
-  proc tan*(x: float32): float32 {.importc: "tanf", header: "<math.h>".}
-  proc tan*(x: float64): float64 {.importc: "tan", header: "<math.h>".}
+  proc tan*(x: float32): float32 {.importc: "tanf", mathH.}
+  proc tan*(x: float64): float64 {.importc: "tan", mathH.}
     ## Computes the tangent of ``x``.
     ##
     ## See also:
@@ -387,8 +394,8 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo tan(degToRad(45.0)) ## 0.9999999999999999
     ##  echo tan(PI / 4)         ## 0.9999999999999999
-  proc sinh*(x: float32): float32 {.importc: "sinhf", header: "<math.h>".}
-  proc sinh*(x: float64): float64 {.importc: "sinh", header: "<math.h>".}
+  proc sinh*(x: float32): float32 {.importc: "sinhf", mathH.}
+  proc sinh*(x: float64): float64 {.importc: "sinh", mathH.}
     ## Computes the `hyperbolic sine <https://en.wikipedia.org/wiki/Hyperbolic_function#Definitions>`_ of ``x``.
     ##
     ## See also:
@@ -401,8 +408,8 @@ when not defined(js): # C
     ##  echo sinh(0.0)            ## 0.0
     ##  echo sinh(1.0)            ## 1.175201193643801
     ##  echo sinh(degToRad(90.0)) ## 2.301298902307295
-  proc cosh*(x: float32): float32 {.importc: "coshf", header: "<math.h>".}
-  proc cosh*(x: float64): float64 {.importc: "cosh", header: "<math.h>".}
+  proc cosh*(x: float32): float32 {.importc: "coshf", mathH.}
+  proc cosh*(x: float64): float64 {.importc: "cosh", mathH.}
     ## Computes the `hyperbolic cosine <https://en.wikipedia.org/wiki/Hyperbolic_function#Definitions>`_ of ``x``.
     ##
     ## See also:
@@ -415,8 +422,8 @@ when not defined(js): # C
     ##  echo cosh(0.0)            ## 1.0
     ##  echo cosh(1.0)            ## 1.543080634815244
     ##  echo cosh(degToRad(90.0)) ## 2.509178478658057
-  proc tanh*(x: float32): float32 {.importc: "tanhf", header: "<math.h>".}
-  proc tanh*(x: float64): float64 {.importc: "tanh", header: "<math.h>".}
+  proc tanh*(x: float32): float32 {.importc: "tanhf", mathH.}
+  proc tanh*(x: float64): float64 {.importc: "tanh", mathH.}
     ## Computes the `hyperbolic tangent <https://en.wikipedia.org/wiki/Hyperbolic_function#Definitions>`_ of ``x``.
     ##
     ## See also:
@@ -430,8 +437,8 @@ when not defined(js): # C
     ##  echo tanh(1.0)            ## 0.7615941559557649
     ##  echo tanh(degToRad(90.0)) ## 0.9171523356672744
 
-  proc arccos*(x: float32): float32 {.importc: "acosf", header: "<math.h>".}
-  proc arccos*(x: float64): float64 {.importc: "acos", header: "<math.h>".}
+  proc arccos*(x: float32): float32 {.importc: "acosf", mathH.}
+  proc arccos*(x: float64): float64 {.importc: "acos", mathH.}
     ## Computes the arc cosine of ``x``.
     ##
     ## See also:
@@ -443,8 +450,8 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo radToDeg(arccos(0.0)) ## 90.0
     ##  echo radToDeg(arccos(1.0)) ## 0.0
-  proc arcsin*(x: float32): float32 {.importc: "asinf", header: "<math.h>".}
-  proc arcsin*(x: float64): float64 {.importc: "asin", header: "<math.h>".}
+  proc arcsin*(x: float32): float32 {.importc: "asinf", mathH.}
+  proc arcsin*(x: float64): float64 {.importc: "asin", mathH.}
     ## Computes the arc sine of ``x``.
     ##
     ## See also:
@@ -456,8 +463,8 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo radToDeg(arcsin(0.0)) ## 0.0
     ##  echo radToDeg(arcsin(1.0)) ## 90.0
-  proc arctan*(x: float32): float32 {.importc: "atanf", header: "<math.h>".}
-  proc arctan*(x: float64): float64 {.importc: "atan", header: "<math.h>".}
+  proc arctan*(x: float32): float32 {.importc: "atanf", mathH.}
+  proc arctan*(x: float64): float64 {.importc: "atan", mathH.}
     ## Calculate the arc tangent of ``x``.
     ##
     ## See also:
@@ -470,8 +477,8 @@ when not defined(js): # C
     ##  echo arctan(1.0) ## 0.7853981633974483
     ##  echo radToDeg(arctan(1.0)) ## 45.0
   proc arctan2*(y, x: float32): float32 {.importc: "atan2f",
-      header: "<math.h>".}
-  proc arctan2*(y, x: float64): float64 {.importc: "atan2", header: "<math.h>".}
+      mathH.}
+  proc arctan2*(y, x: float64): float64 {.importc: "atan2", mathH.}
     ## Calculate the arc tangent of ``y`` / ``x``.
     ##
     ## It produces correct results even when the resulting angle is near
@@ -486,14 +493,14 @@ when not defined(js): # C
     ## .. code-block:: nim
     ##  echo arctan2(1.0, 0.0) ## 1.570796326794897
     ##  echo radToDeg(arctan2(1.0, 0.0)) ## 90.0
-  proc arcsinh*(x: float32): float32 {.importc: "asinhf", header: "<math.h>".}
-  proc arcsinh*(x: float64): float64 {.importc: "asinh", header: "<math.h>".}
+  proc arcsinh*(x: float32): float32 {.importc: "asinhf", mathH.}
+  proc arcsinh*(x: float64): float64 {.importc: "asinh", mathH.}
     ## Computes the inverse hyperbolic sine of ``x``.
-  proc arccosh*(x: float32): float32 {.importc: "acoshf", header: "<math.h>".}
-  proc arccosh*(x: float64): float64 {.importc: "acosh", header: "<math.h>".}
+  proc arccosh*(x: float32): float32 {.importc: "acoshf", mathH.}
+  proc arccosh*(x: float64): float64 {.importc: "acosh", mathH.}
     ## Computes the inverse hyperbolic cosine of ``x``.
-  proc arctanh*(x: float32): float32 {.importc: "atanhf", header: "<math.h>".}
-  proc arctanh*(x: float64): float64 {.importc: "atanh", header: "<math.h>".}
+  proc arctanh*(x: float32): float32 {.importc: "atanhf", mathH.}
+  proc arctanh*(x: float64): float64 {.importc: "atanh", mathH.}
     ## Computes the inverse hyperbolic tangent of ``x``.
 
 else: # JS
@@ -552,15 +559,15 @@ proc arccsch*[T: float32|float64](x: T): T = arcsinh(1.0 / x)
 const windowsCC89 = defined(windows) and defined(bcc)
 
 when not defined(js): # C
-  proc hypot*(x, y: float32): float32 {.importc: "hypotf", header: "<math.h>".}
-  proc hypot*(x, y: float64): float64 {.importc: "hypot", header: "<math.h>".}
+  proc hypot*(x, y: float32): float32 {.importc: "hypotf", mathH.}
+  proc hypot*(x, y: float64): float64 {.importc: "hypot", mathH.}
     ## Computes the hypotenuse of a right-angle triangle with ``x`` and
     ## ``y`` as its base and height. Equivalent to ``sqrt(x*x + y*y)``.
     ##
     ## .. code-block:: nim
     ##  echo hypot(4.0, 3.0) ## 5.0
-  proc pow*(x, y: float32): float32 {.importc: "powf", header: "<math.h>".}
-  proc pow*(x, y: float64): float64 {.importc: "pow", header: "<math.h>".}
+  proc pow*(x, y: float32): float32 {.importc: "powf", mathH.}
+  proc pow*(x, y: float64): float64 {.importc: "pow", mathH.}
     ## Computes x to power raised of y.
     ##
     ## To compute power between integers (e.g. 2^6), use `^ proc<#^,T,Natural>`_.
@@ -576,18 +583,18 @@ when not defined(js): # C
 
   # TODO: add C89 version on windows
   when not windowsCC89:
-    proc erf*(x: float32): float32 {.importc: "erff", header: "<math.h>".}
-    proc erf*(x: float64): float64 {.importc: "erf", header: "<math.h>".}
+    proc erf*(x: float32): float32 {.importc: "erff", mathH.}
+    proc erf*(x: float64): float64 {.importc: "erf", mathH.}
       ## Computes the `error function <https://en.wikipedia.org/wiki/Error_function>`_ for ``x``.
       ##
       ## Note: Not available for JS backend.
-    proc erfc*(x: float32): float32 {.importc: "erfcf", header: "<math.h>".}
-    proc erfc*(x: float64): float64 {.importc: "erfc", header: "<math.h>".}
+    proc erfc*(x: float32): float32 {.importc: "erfcf", mathH.}
+    proc erfc*(x: float64): float64 {.importc: "erfc", mathH.}
       ## Computes the `complementary error function <https://en.wikipedia.org/wiki/Error_function#Complementary_error_function>`_ for ``x``.
       ##
       ## Note: Not available for JS backend.
-    proc gamma*(x: float32): float32 {.importc: "tgammaf", header: "<math.h>".}
-    proc gamma*(x: float64): float64 {.importc: "tgamma", header: "<math.h>".}
+    proc gamma*(x: float32): float32 {.importc: "tgammaf", mathH.}
+    proc gamma*(x: float64): float64 {.importc: "tgamma", mathH.}
       ## Computes the the `gamma function <https://en.wikipedia.org/wiki/Gamma_function>`_ for ``x``.
       ##
       ## Note: Not available for JS backend.
@@ -600,8 +607,8 @@ when not defined(js): # C
       ##  echo gamma(4.0)  # 6.0
       ##  echo gamma(11.0) # 3628800.0
       ##  echo gamma(-1.0) # nan
-    proc lgamma*(x: float32): float32 {.importc: "lgammaf", header: "<math.h>".}
-    proc lgamma*(x: float64): float64 {.importc: "lgamma", header: "<math.h>".}
+    proc lgamma*(x: float32): float32 {.importc: "lgammaf", mathH.}
+    proc lgamma*(x: float64): float64 {.importc: "lgamma", mathH.}
       ## Computes the natural log of the gamma function for ``x``.
       ##
       ## Note: Not available for JS backend.
@@ -615,8 +622,8 @@ when not defined(js): # C
       ##  echo lgamma(11.0) # 15.10441257307552
       ##  echo lgamma(-1.0) # inf
 
-  proc floor*(x: float32): float32 {.importc: "floorf", header: "<math.h>".}
-  proc floor*(x: float64): float64 {.importc: "floor", header: "<math.h>".}
+  proc floor*(x: float32): float32 {.importc: "floorf", mathH.}
+  proc floor*(x: float64): float64 {.importc: "floor", mathH.}
     ## Computes the floor function (i.e., the largest integer not greater than ``x``).
     ##
     ## See also:
@@ -629,8 +636,8 @@ when not defined(js): # C
     ##  echo floor(2.9)  ## 2.0
     ##  echo floor(-3.5) ## -4.0
 
-  proc ceil*(x: float32): float32 {.importc: "ceilf", header: "<math.h>".}
-  proc ceil*(x: float64): float64 {.importc: "ceil", header: "<math.h>".}
+  proc ceil*(x: float32): float32 {.importc: "ceilf", mathH.}
+  proc ceil*(x: float64): float64 {.importc: "ceil", mathH.}
     ## Computes the ceiling function (i.e., the smallest integer not smaller
     ## than ``x``).
     ##
@@ -700,8 +707,8 @@ when not defined(js): # C
       ## 'roundl' or 'roundf'.
       result = if x < 0.0: ceil(x - T(0.5)) else: floor(x + T(0.5))
   else:
-    proc round*(x: float32): float32 {.importc: "roundf", header: "<math.h>".}
-    proc round*(x: float64): float64 {.importc: "round", header: "<math.h>".}
+    proc round*(x: float32): float32 {.importc: "roundf", mathH.}
+    proc round*(x: float64): float64 {.importc: "round", mathH.}
       ## Rounds a float to zero decimal places.
       ##
       ## Used internally by the `round proc <#round,T,int>`_
@@ -719,8 +726,8 @@ when not defined(js): # C
       ##   echo round(3.5) ## 4.0
       ##   echo round(4.5) ## 5.0
 
-    proc trunc*(x: float32): float32 {.importc: "truncf", header: "<math.h>".}
-    proc trunc*(x: float64): float64 {.importc: "trunc", header: "<math.h>".}
+    proc trunc*(x: float32): float32 {.importc: "truncf", mathH.}
+    proc trunc*(x: float64): float64 {.importc: "trunc", mathH.}
       ## Truncates ``x`` to the decimal point.
       ##
       ## See also:
@@ -732,8 +739,8 @@ when not defined(js): # C
       ##  echo trunc(PI) # 3.0
       ##  echo trunc(-1.85) # -1.0
 
-  proc `mod`*(x, y: float32): float32 {.importc: "fmodf", header: "<math.h>".}
-  proc `mod`*(x, y: float64): float64 {.importc: "fmod", header: "<math.h>".}
+  proc `mod`*(x, y: float32): float32 {.importc: "fmodf", mathH.}
+  proc `mod`*(x, y: float64): float64 {.importc: "fmod", mathH.}
     ## Computes the modulo operation for float values (the remainder of ``x`` divided by ``y``).
     ##
     ## See also:
@@ -828,9 +835,9 @@ proc floorMod*[T: SomeNumber](x, y: T): T =
 
 when not defined(js):
   proc c_frexp*(x: float32, exponent: var int32): float32 {.
-    importc: "frexp", header: "<math.h>".}
+    importc: "frexp", mathH.}
   proc c_frexp*(x: float64, exponent: var int32): float64 {.
-    importc: "frexp", header: "<math.h>".}
+    importc: "frexp", mathH.}
   proc frexp*[T, U](x: T, exponent: var U): T =
     ## Split a number into mantissa and exponent.
     ##
@@ -864,8 +871,8 @@ when not defined(js):
       ## The special cases are the same as for Log.
 
   else:
-    proc log2*(x: float32): float32 {.importc: "log2f", header: "<math.h>".}
-    proc log2*(x: float64): float64 {.importc: "log2", header: "<math.h>".}
+    proc log2*(x: float32): float32 {.importc: "log2f", mathH.}
+    proc log2*(x: float64): float64 {.importc: "log2", mathH.}
       ## Computes the binary logarithm (base 2) of ``x``.
       ##
       ## See also:

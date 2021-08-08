@@ -537,7 +537,12 @@ proc toFloat64*(arg: Int128): float64 =
   if isNegative:
     result = -result
 
-proc ldexp(x: float64, exp: cint): float64 {.importc: "ldexp", header: "<math.h>".}
+when defined(plan9):
+  {.pragma: mathH.}
+else:
+  {.pragma: mathH, header: "<math.h>".}
+
+proc ldexp(x: float64, exp: cint): float64 {.importc: "ldexp", mathH.}
 
 template bitor(a,b,c: Int128): Int128 = bitor(bitor(a,b), c)
 
