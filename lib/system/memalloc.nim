@@ -313,7 +313,7 @@ when hasAlloc and not defined(js):
     cast[pointer](cast[int](p) -% int(s))
 
   proc alignedAlloc(size, align: Natural): pointer =
-    if align <= MemAlign:
+    if align <= MemAlign or defined(plan9):
       when compileOption("threads"):
         result = allocShared(size)
       else:
@@ -333,7 +333,7 @@ when hasAlloc and not defined(js):
       result = base +! offset
 
   proc alignedAlloc0(size, align: Natural): pointer =
-    if align <= MemAlign:
+    if align <= MemAlign or defined(plan9):
       when compileOption("threads"):
         result = allocShared0(size)
       else:
@@ -349,7 +349,7 @@ when hasAlloc and not defined(js):
       result = base +! offset
 
   proc alignedDealloc(p: pointer, align: int) {.compilerproc.} = 
-    if align <= MemAlign:
+    if align <= MemAlign or defined(plan9):
       when compileOption("threads"):
         deallocShared(p)
       else:
@@ -363,7 +363,7 @@ when hasAlloc and not defined(js):
         dealloc(p -! offset)
 
   proc alignedRealloc(p: pointer, oldSize, newSize, align: Natural): pointer =
-    if align <= MemAlign:
+    if align <= MemAlign or defined(plan9):
       when compileOption("threads"):
         result = reallocShared(p, newSize)
       else:
@@ -374,7 +374,7 @@ when hasAlloc and not defined(js):
       alignedDealloc(p, align)
 
   proc alignedRealloc0(p: pointer, oldSize, newSize, align: Natural): pointer =
-    if align <= MemAlign:
+    if align <= MemAlign or defined(plan9):
       when compileOption("threads"):
         result = reallocShared0(p, oldSize, newSize)
       else:
