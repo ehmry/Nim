@@ -935,6 +935,8 @@ proc cgsymValue(m: BModule, name: string): Rope =
     result.addActualSuffixForHCR(m.module, sym)
 
 proc generateHeaders(m: BModule) =
+  if m.config.target.targetOS == osSolo5:
+    m.s[cfsHeaders].add("\L#define NIM_SOLO5\L")
   var nimbase = m.config.nimbasePattern
   if nimbase == "": nimbase = "nimbase.h"
   m.s[cfsHeaders].addf("\L#include \"$1\"\L", [nimbase])
@@ -1609,6 +1611,13 @@ proc genMainProc(m: BModule) =
       "\t});$N" &
       "}$N$N"
 
+    Solo5AppMain =
+      "struct solo5_start_info *_solo5_start_info;$N$N" &
+      "int solo5_app_main(const struct solo5_start_info *start_info) {$N" &
+      "\t_solo5_start_info = start_info;$N" &
+      MainProcsWithResult &
+      "}$N$N"
+
   if m.config.target.targetOS == osWindows and
       m.config.globalOptions * {optGenGuiApp, optGenDynLib} != {}:
     m.includeHeader("<windows.h>")
@@ -1667,6 +1676,9 @@ proc genMainProc(m: BModule) =
       appcg(m, m.s[cfsProcs], otherMain, [m.config.nimMainPrefix])
     elif m.config.target.targetOS == osStandalone:
       const otherMain = StandaloneCMain
+      appcg(m, m.s[cfsProcs], otherMain, [m.config.nimMainPrefix])
+    elif m.config.target.targetOS == osSolo5:
+      const otherMain = Solo5AppMain
       appcg(m, m.s[cfsProcs], otherMain, [m.config.nimMainPrefix])
     else:
       const otherMain = PosixCMain

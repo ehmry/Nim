@@ -17,6 +17,9 @@ elif defined(genode):
   proc rawQuit(errorcode: int = QuitSuccess) {.inline, noreturn.} =
     systemEnv.rawQuit(errorcode)
 
+elif defined(solo5):
+  proc rawQuit(errorcode: cint) {.
+    magic: "Exit", importc: "solo5_exit", header: "solo5.h", noreturn.}
 
 elif defined(js) and defined(nodejs) and not defined(nimscript):
   proc rawQuit(errorcode: int = QuitSuccess) {.magic: "Exit",

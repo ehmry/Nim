@@ -97,7 +97,7 @@ elif defined(genode):
   proc broadcastSysCond*(cond: var SysCond) {.
     noSideEffect, importcpp.}
 
-else:
+elif defined(posix):
   type
     SysLockObj {.importc: "pthread_mutex_t", pure, final,
                header: """#include <sys/types.h>
@@ -230,5 +230,23 @@ else:
       signalSysCondAux(cond)
     template broadcastSysCond*(cond: var SysCond) =
       broadcastSysCondAux(cond)
+
+elif defined(solo5):
+  # Solo5 is single-threaded
+  type
+    SysLock* = object
+    SysCond* = object
+
+  proc initSysLock*(L: var SysLock) = discard
+  proc deinitSys*(L: var SysLock) = discard
+  proc acquireSys*(L: var SysLock) = discard
+  proc tryAcquireSys*(L: var SysLock): bool = discard
+  proc releaseSys*(L: var SysLock) = discard
+
+  proc initSysCond*(L: var SysCond) = discard
+  proc deinitSysCond*(L: var SysCond) = discard
+  proc waitSysCond*(cond: var SysCond, lock: var SysLock) = discard
+  proc signalSysCond*(cond: var SysCond) = discard
+  proc broadcastSysCond*(cond: var SysCond) = discard
 
 {.pop.}

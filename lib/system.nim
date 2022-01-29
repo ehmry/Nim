@@ -1377,7 +1377,7 @@ func abs*(x: int64): int64 {.magic: "AbsI", inline.} =
 
 {.pop.} # stackTrace: off
 
-when not defined(nimPreviewSlimSystem):
+when not defined(nimPreviewSlimSystem) and not defined(solo5):
   proc addQuitProc*(quitProc: proc() {.noconv.}) {.
     importc: "atexit", header: "<stdlib.h>", deprecated: "use exitprocs.addExitProc".}
     ## Adds/registers a quit procedure.
@@ -2086,7 +2086,7 @@ when not defined(js):
   when declared(initAllocator):
     initAllocator()
   when hasThreadSupport:
-    when hostOS != "standalone":
+    when hostOS != "standalone" and not defined(solo5):
       include system/threadimpl
       when not defined(nimPreviewSlimSystem):
         import std/typedthreads
@@ -2322,7 +2322,7 @@ else:
 
 proc quit*(errormsg: string, errorcode = QuitFailure) {.noreturn.} =
   ## A shorthand for `echo(errormsg); quit(errorcode)`.
-  when defined(nimscript) or defined(js) or (hostOS == "standalone"):
+  when defined(nimscript) or defined(js) or defined(solo5) or (hostOS == "standalone"):
     echo errormsg
   else:
     when nimvm:
@@ -2747,6 +2747,11 @@ when notJSnotNims:
       for arg in args:
         s.add arg
       android_log_print(ANDROID_LOG_VERBOSE, "nim", s)
+    elif defined(solo5):
+      proc solo5_console_write(buf: cstring; size: csize_t) {.importc, header: "solo5.h" .}
+      for s in args:
+        solo5_console_write(s.cstring, cast[csize_t](s.len))
+      solo5_console_write("\n", 1)
     else:
       # flockfile deadlocks some versions of Android 5.x.x
       when stdOutLock:

@@ -192,6 +192,31 @@ elif defined(windows) and not defined(StandaloneHeapSize):
         rawQuit 1
     #VirtualFree(p, size, MEM_DECOMMIT)
 
+elif defined(solo5):
+  # Solo5 uses a single contiguous
+  # memory region for heap and stack.
+
+  import solo5
+  const stackMargin = 1 shl 20 # 1 MiB
+
+  var heapTop = cast[ByteAddress](solo5_start_info.heap_start)
+
+  proc osTryAllocPages(size: int): pointer {.inline.} =
+    var stackMarker: ByteAddress
+    stackMarker = cast[ByteAddress](addr stackMarker)
+    if heapTop+size+stackMargin < stackMarker:
+      result = cast[pointer](heapTop)
+      inc heapTop, size
+
+  proc osAllocPages(size: int): pointer {.inline.} =
+    result = osTryAllocPages(size)
+    if result.isNil:
+      raise newException(OutOfMemDefect, "heap and stack collision imminent")
+
+  proc osDeallocPages(p: pointer, size: int) {.inline.} =
+    if heapTop-size == cast[ByteAddress](p):
+      dec heapTop, size
+
 elif hostOS == "standalone" or defined(StandaloneHeapSize):
   const StandaloneHeapSize {.intdefine.}: int = 1024 * PageSize
   var

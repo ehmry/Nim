@@ -22,3 +22,7 @@ when defined(nimStrictMode):
 
 switch("define", "nimVersion:" & NimVersion)
 
+when defined(solo5):
+  const solo5tender {.strdefine.}: string = "spt"
+  switch("passL", "-z solo5-abi=" & solo5tender)
+    # Select the Solo5 tender to link against.

@@ -96,7 +96,7 @@
 
 import std/private/since
 
-when defined(nimPreviewSlimSystem):
+when defined(nimPreviewSlimSystem) and not defined(solo5):
   import std/syncio
   export FileMode
 
