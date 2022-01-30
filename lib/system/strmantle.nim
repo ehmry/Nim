@@ -43,31 +43,32 @@ proc hashString(s: string): int {.compilerproc.} =
   h = h + h shl 15
   result = cast[int](h)
 
-proc eqCstrings(a, b: cstring): bool {.inline, compilerproc.} =
-  if pointer(a) == pointer(b): result = true
-  elif a.isNil or b.isNil: result = false
-  else: result = c_strcmp(a, b) == 0
+when not defined(nimNoLibc):
+  proc eqCstrings(a, b: cstring): bool {.inline, compilerproc.} =
+    if pointer(a) == pointer(b): result = true
+    elif a.isNil or b.isNil: result = false
+    else: result = c_strcmp(a, b) == 0
 
-proc hashCstring(s: cstring): int {.compilerproc.} =
-  # the compiler needs exactly the same hash function!
-  # this used to be used for efficient generation of cstring case statements
-  if s.isNil: return 0
-  var h : uint = 0
-  var i = 0
-  while true:
-    let c = s[i]
-    if c == '\0': break
-    h = h + uint(c)
-    h = h + h shl 10
-    h = h xor (h shr 6)
-    inc i
-  h = h + h shl 3
-  h = h xor (h shr 11)
-  h = h + h shl 15
-  result = cast[int](h)
+  proc hashCstring(s: cstring): int {.compilerproc.} =
+    # the compiler needs exactly the same hash function!
+    # this used to be used for efficient generation of cstring case statements
+    if s.isNil: return 0
+    var h : uint = 0
+    var i = 0
+    while true:
+      let c = s[i]
+      if c == '\0': break
+      h = h + uint(c)
+      h = h + h shl 10
+      h = h xor (h shr 6)
+      inc i
+    h = h + h shl 3
+    h = h xor (h shr 11)
+    h = h + h shl 15
+    result = cast[int](h)
 
-proc c_strtod(buf: cstring, endptr: ptr cstring): float64 {.
-  importc: "strtod", header: "<stdlib.h>", noSideEffect.}
+  proc c_strtod(buf: cstring, endptr: ptr cstring): float64 {.
+    importc: "strtod", header: "<stdlib.h>", noSideEffect.}
 
 const
   IdentChars = {'a'..'z', 'A'..'Z', '0'..'9', '_'}
@@ -205,36 +206,44 @@ proc nimParseBiggestFloat(s: openArray[char], number: var BiggestFloat,
       number = sign * integer.float * powtens[slop] * powtens[absExponent-slop]
       return i
 
-  # if failed: slow path with strtod.
-  var t: array[500, char] # flaviu says: 325 is the longest reasonable literal
-  var ti = 0
-  let maxlen = t.high - "e+000".len # reserve enough space for exponent
+  when defined(nimNoLibc):
+    number = NaN
+    raise newException(
+      FloatInexactDefect,
+      "insufficient precision in floating-point decimal parser for this platform")
+  else:
+    # if failed: slow path with strtod.
+    var t: array[500, char] # flaviu says: 325 is the longest reasonable literal
+    var ti = 0
+    let maxlen = t.high - "e+000".len # reserve enough space for exponent
 
-  let endPos = i
-  result = endPos
-  i = 0
-  # re-parse without error checking, any error should be handled by the code above.
-  if i < endPos and s[i] == '.': i.inc
-  while i < endPos and s[i] in {'0'..'9','+','-'}:
-    if ti < maxlen:
-      t[ti] = s[i]; inc(ti)
-    inc(i)
-    while i < endPos and s[i] in {'.', '_'}: # skip underscore and decimal point
+    let endPos = i
+    result = endPos
+    i = 0
+    # re-parse without error checking, any error should be handled by the code above.
+    if i < endPos and s[i] == '.': i.inc
+    while i < endPos and s[i] in {'0'..'9','+','-'}:
+      if ti < maxlen:
+        t[ti] = s[i]; inc(ti)
       inc(i)
+      while i < endPos and s[i] in {'.', '_'}: # skip underscore and decimal point
+        inc(i)
+        while i < endPos and s[i] in {'.', '_'}: # skip underscore and decimal point
+          inc(i)
 
-  # insert exponent
-  t[ti] = 'E'
-  inc(ti)
-  t[ti] = if expNegative: '-' else: '+'
-  inc(ti, 4)
+      # insert exponent
+      t[ti] = 'E'
+      inc(ti)
+      t[ti] = if expNegative: '-' else: '+'
+      inc(ti, 4)
 
-  # insert adjusted exponent
-  t[ti-1] = ('0'.ord + absExponent mod 10).char
-  absExponent = absExponent div 10
-  t[ti-2] = ('0'.ord + absExponent mod 10).char
-  absExponent = absExponent div 10
-  t[ti-3] = ('0'.ord + absExponent mod 10).char
-  number = c_strtod(cast[cstring](addr t), nil)
+    # insert adjusted exponent
+    t[ti-1] = ('0'.ord + absExponent mod 10).char
+    absExponent = absExponent div 10
+    t[ti-2] = ('0'.ord + absExponent mod 10).char
+    absExponent = absExponent div 10
+    t[ti-3] = ('0'.ord + absExponent mod 10).char
+    number = c_strtod(cast[cstring](addr t), nil)
 
 {.pop.} # staticBoundChecks
 

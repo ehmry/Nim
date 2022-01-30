@@ -1923,7 +1923,7 @@ func find*(a: SkipTable, s, sub: string, start: Natural = 0, last = -1): int {.
       dec i
     inc skip, a[s[skip + subLast]]
 
-when not (defined(js) or defined(nimdoc) or defined(nimscript)):
+when not (defined(js) or defined(nimdoc) or defined(nimscript) or defined(nimNoLibc)):
   func c_memchr(cstr: pointer, c: char, n: csize_t): pointer {.
                 importc: "memchr", header: "<string.h>".}
   const hasCStringBuiltin = true
@@ -2416,7 +2416,7 @@ func validIdentifier*(s: string): bool {.rtl, extern: "nsuValidIdentifier".} =
 
 
 # floating point formatting:
-when not defined(js):
+when not (defined(js) or defined(nimNoLibc)):
   func c_sprintf(buf, frmt: cstring): cint {.header: "<stdio.h>",
                                      importc: "sprintf", varargs.}
 
@@ -2469,6 +2469,8 @@ func formatBiggestFloat*(f: BiggestFloat, format: FloatFormatMode = ffDefault,
         # Depending on the locale either dot or comma is produced,
         # but nothing else is possible:
         if result[i] in {'.', ','}: result[i] = decimalSep
+    elif defined(nimNoLibc):
+      raiseAssert "plaform does not implement c_sprintf"
     else:
       const floatFormatToChar: array[FloatFormatMode, char] = ['g', 'f', 'e']
       var
