@@ -36,6 +36,9 @@ import strutils, pathnorm
 
 const weirdTarget = defined(nimscript) or defined(js)
 
+const fileSystemMissing = not defined(nimdoc) and (
+  defined(fileSystemMissing) or (defined(genode) and not defined(posix)))
+
 since (1, 1):
   const
     invalidFilenameChars* = {'/', '\\', ':', '*', '?', '"', '<', '>', '|', '^', '\0'} ## \
@@ -1163,7 +1166,8 @@ proc fileExists*(filename: string): bool {.rtl, extern: "nos$1",
   ## See also:
   ## * `dirExists proc <#dirExists,string>`_
   ## * `symlinkExists proc <#symlinkExists,string>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       wrapUnary(a, getFileAttributesW, filename)
     else:
@@ -1182,7 +1186,8 @@ proc dirExists*(dir: string): bool {.rtl, extern: "nos$1", tags: [ReadDirEffect]
   ## See also:
   ## * `fileExists proc <#fileExists,string>`_
   ## * `symlinkExists proc <#symlinkExists,string>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       wrapUnary(a, getFileAttributesW, dir)
     else:
@@ -1202,7 +1207,8 @@ proc symlinkExists*(link: string): bool {.rtl, extern: "nos$1",
   ## See also:
   ## * `fileExists proc <#fileExists,string>`_
   ## * `dirExists proc <#dirExists,string>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       wrapUnary(a, getFileAttributesW, link)
     else:
@@ -1237,46 +1243,48 @@ proc findExe*(exe: string, followSymlinks: bool = true;
   ## meets the actual file. This behavior can be disabled if desired
   ## by setting `followSymlinks = false`.
 
-  if exe.len == 0: return
-  template checkCurrentDir() =
-    for ext in extensions:
-      result = addFileExt(exe, ext)
-      if fileExists(result): return
-  when defined(posix):
-    if '/' in exe: checkCurrentDir()
+  when fileSystemMissing: discard
   else:
-    checkCurrentDir()
-  let path = getEnv("PATH")
-  for candidate in split(path, PathSep):
-    if candidate.len == 0: continue
-    when defined(windows):
-      var x = (if candidate[0] == '"' and candidate[^1] == '"':
-                substr(candidate, 1, candidate.len-2) else: candidate) /
-              exe
+    if exe.len == 0: return
+    template checkCurrentDir() =
+      for ext in extensions:
+        result = addFileExt(exe, ext)
+        if fileExists(result): return
+    when defined(posix):
+      if '/' in exe: checkCurrentDir()
     else:
-      var x = expandTilde(candidate) / exe
-    for ext in extensions:
-      var x = addFileExt(x, ext)
-      if fileExists(x):
-        when not defined(windows):
-          while followSymlinks: # doubles as if here
-            if x.symlinkExists:
-              var r = newString(maxSymlinkLen)
-              var len = readlink(x, r, maxSymlinkLen)
-              if len < 0:
-                raiseOSError(osLastError(), exe)
-              if len > maxSymlinkLen:
-                r = newString(len+1)
-                len = readlink(x, r, len)
-              setLen(r, len)
-              if isAbsolute(r):
-                x = r
+      checkCurrentDir()
+    let path = getEnv("PATH")
+    for candidate in split(path, PathSep):
+      if candidate.len == 0: continue
+      when defined(windows):
+        var x = (if candidate[0] == '"' and candidate[^1] == '"':
+                  substr(candidate, 1, candidate.len-2) else: candidate) /
+                exe
+      else:
+        var x = expandTilde(candidate) / exe
+      for ext in extensions:
+        var x = addFileExt(x, ext)
+        if fileExists(x):
+          when not defined(windows):
+            while followSymlinks: # doubles as if here
+              if x.symlinkExists:
+                var r = newString(maxSymlinkLen)
+                var len = readlink(x, r, maxSymlinkLen)
+                if len < 0:
+                  raiseOSError(osLastError(), exe)
+                if len > maxSymlinkLen:
+                  r = newString(len+1)
+                  len = readlink(x, r, len)
+                setLen(r, len)
+                if isAbsolute(r):
+                  x = r
+                else:
+                  x = parentDir(x) / r
               else:
-                x = parentDir(x) / r
-            else:
-              break
-        return x
-  result = ""
+                break
+          return x
+    result = ""
 
 when weirdTarget:
   const times = "fake const"
@@ -1289,7 +1297,8 @@ proc getLastModificationTime*(file: string): times.Time {.rtl, extern: "nos$1", 
   ## * `getLastAccessTime proc <#getLastAccessTime,string>`_
   ## * `getCreationTime proc <#getCreationTime,string>`_
   ## * `fileNewer proc <#fileNewer,string,string>`_
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError(), file)
     result = res.st_mtim.toTime
@@ -1307,7 +1316,8 @@ proc getLastAccessTime*(file: string): times.Time {.rtl, extern: "nos$1", noWeir
   ## * `getLastModificationTime proc <#getLastModificationTime,string>`_
   ## * `getCreationTime proc <#getCreationTime,string>`_
   ## * `fileNewer proc <#fileNewer,string,string>`_
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError(), file)
     result = res.st_atim.toTime
@@ -1329,7 +1339,8 @@ proc getCreationTime*(file: string): times.Time {.rtl, extern: "nos$1", noWeirdT
   ## * `getLastModificationTime proc <#getLastModificationTime,string>`_
   ## * `getLastAccessTime proc <#getLastAccessTime,string>`_
   ## * `fileNewer proc <#fileNewer,string,string>`_
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     var res: Stat
     if stat(file, res) < 0'i32: raiseOSError(osLastError(), file)
     result = res.st_ctim.toTime
@@ -1348,7 +1359,8 @@ proc fileNewer*(a, b: string): bool {.rtl, extern: "nos$1", noWeirdTarget.} =
   ## * `getLastModificationTime proc <#getLastModificationTime,string>`_
   ## * `getLastAccessTime proc <#getLastAccessTime,string>`_
   ## * `getCreationTime proc <#getCreationTime,string>`_
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     # If we don't have access to nanosecond resolution, use '>='
     when not StatHasNanoseconds:
       result = getLastModificationTime(a) >= getLastModificationTime(b)
@@ -1371,7 +1383,8 @@ when not defined(nimscript):
     ## * `setCurrentDir proc <#setCurrentDir,string>`_
     ## * `currentSourcePath template <system.html#currentSourcePath.t>`_
     ## * `getProjectPath proc <macros.html#getProjectPath>`_
-    when defined(nodejs):
+    when fileSystemMissing: discard
+    elif defined(nodejs):
       var ret: cstring
       {.emit: "`ret` = process.cwd();".}
       return $ret
@@ -1428,7 +1441,8 @@ proc setCurrentDir*(newDir: string) {.inline, tags: [], noWeirdTarget.} =
   ## * `getConfigDir proc <#getConfigDir>`_
   ## * `getTempDir proc <#getTempDir>`_
   ## * `getCurrentDir proc <#getCurrentDir>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       if setCurrentDirectoryW(newWideCString(newDir)) == 0'i32:
         raiseOSError(osLastError(), newDir)
@@ -1565,7 +1579,8 @@ proc sameFile*(path1, path2: string): bool {.rtl, extern: "nos$1",
   ##
   ## See also:
   ## * `sameFileContent proc <#sameFileContent,string,string>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     var success = true
     var f1 = openHandle(path1)
     var f2 = openHandle(path2)
@@ -1625,7 +1640,8 @@ proc getFilePermissions*(filename: string): set[FilePermission] {.
   ## See also:
   ## * `setFilePermissions proc <#setFilePermissions,string,set[FilePermission]>`_
   ## * `FilePermission enum <#FilePermission>`_
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     var a: Stat
     if stat(filename, a) < 0'i32: raiseOSError(osLastError(), filename)
     result = {}
@@ -1671,7 +1687,8 @@ proc setFilePermissions*(filename: string, permissions: set[FilePermission],
   ## See also:
   ## * `getFilePermissions <#getFilePermissions,string>`_
   ## * `FilePermission enum <#FilePermission>`_
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     var p = 0.Mode
     if fpUserRead in permissions: p = p or S_IRUSR.Mode
     if fpUserWrite in permissions: p = p or S_IWUSR.Mode
@@ -1750,7 +1767,8 @@ proc createSymlink*(src, dest: string) {.noWeirdTarget.} =
   ## * `createHardlink proc <#createHardlink,string,string>`_
   ## * `expandSymlink proc <#expandSymlink,string>`_
 
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     const SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE = 2
     # allows anyone with developer mode on to create a link
     let flag = dirExists(src).int32 or SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
@@ -1773,7 +1791,8 @@ proc expandSymlink*(symlinkPath: string): string {.noWeirdTarget.} =
   ##
   ## See also:
   ## * `createSymlink proc <#createSymlink,string,string>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     result = symlinkPath
   else:
     result = newString(maxSymlinkLen)
@@ -1950,7 +1969,8 @@ proc tryRemoveFile*(file: string): bool {.rtl, extern: "nos$1", tags: [WriteDirE
   ## * `removeFile proc <#removeFile,string>`_
   ## * `moveFile proc <#moveFile,string,string>`_
   result = true
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       let f = newWideCString(file)
     else:
@@ -1991,7 +2011,8 @@ proc tryMoveFSObject(source, dest: string, isDir: bool): bool {.noWeirdTarget.} 
   ## Returns false in case of `EXDEV` error or `AccessDeniedError` on windows (if `isDir` is true).
   ## In case of other errors `OSError` is raised.
   ## Returns true in case of success.
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       let s = newWideCString(source)
       let d = newWideCString(dest)
@@ -2001,16 +2022,18 @@ proc tryMoveFSObject(source, dest: string, isDir: bool): bool {.noWeirdTarget.} 
   else:
     result = c_rename(source, dest) == 0'i32
 
-  if not result:
-    let err = osLastError()
-    let isAccessDeniedError =
-      when defined(windows):
-        const AccessDeniedError = OSErrorCode(5)
-        isDir and err == AccessDeniedError
-      else:
-        err == EXDEV.OSErrorCode
-    if not isAccessDeniedError:
-      raiseOSError(err, $(source, dest))
+  when fileSystemMissing: discard
+  else:
+    if not result:
+      let err = osLastError()
+      let isAccessDeniedError =
+        when defined(windows):
+          const AccessDeniedError = OSErrorCode(5)
+          isDir and err == AccessDeniedError
+        else:
+          err == EXDEV.OSErrorCode
+      if not isAccessDeniedError:
+        raiseOSError(err, $(source, dest))
 
 proc moveFile*(source, dest: string) {.rtl, extern: "nos$1",
   tags: [ReadDirEffect, ReadIOEffect, WriteIOEffect], noWeirdTarget.} =
@@ -2093,7 +2116,8 @@ template defaultWalkFilter(item): bool =
 template walkCommon(pattern: string, filter) =
   ## Common code for getting the files and directories with the
   ## specified `pattern`
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     var
       f: WIN32_FIND_DATA
       res: int
@@ -2189,7 +2213,8 @@ proc expandFilename*(filename: string): string {.rtl, extern: "nos$1",
   ## Returns the full (`absolute`:idx:) path of an existing file `filename`.
   ##
   ## Raises `OSError` in case of an error. Follows symlinks.
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     var bufsize = MAX_PATH.int32
     when useWinUnicode:
       var unused: WideCString = nil
@@ -2302,7 +2327,8 @@ iterator walkDir*(dir: string; relative = false, checkDir = false):
     for k, v in items(staticWalkDir(dir, relative)):
       yield (k, v)
   else:
-    when weirdTarget:
+    when fileSystemMissing: discard
+    elif weirdTarget:
       for k, v in items(staticWalkDir(dir, relative)):
         yield (k, v)
     elif defined(windows):
@@ -2425,7 +2451,8 @@ iterator walkDirRec*(dir: string,
       # Future work can provide a way to customize this and do error reporting.
 
 proc rawRemoveDir(dir: string) {.noWeirdTarget.} =
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       wrapUnary(res, removeDirectoryW, dir)
     else:
@@ -2468,7 +2495,8 @@ proc rawCreateDir(dir: string): bool {.noWeirdTarget.} =
   #
   # This is a thin wrapper over mkDir (or alternatives on other systems),
   # so in case of a pre-existing path we don't check that it is a directory.
-  when defined(solaris):
+  when fileSystemMissing: discard
+  elif defined(solaris):
     let res = mkdir(dir, 0o777)
     if res == 0'i32:
       result = true
@@ -2618,7 +2646,8 @@ proc createHardlink*(src, dest: string) {.noWeirdTarget.} =
   ##
   ## See also:
   ## * `createSymlink proc <#createSymlink,string,string>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     when useWinUnicode:
       var wSrc = newWideCString(src)
       var wDst = newWideCString(dest)
@@ -3217,7 +3246,8 @@ proc getFileSize*(file: string): BiggestInt {.rtl, extern: "nos$1",
   tags: [ReadIOEffect], noWeirdTarget.} =
   ## Returns the file size of `file` (in bytes). ``OSError`` is
   ## raised in case of an error.
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     var a: WIN32_FIND_DATA
     var resA = findFirstFile(file, a)
     if resA == -1: raiseOSError(osLastError(), file)
@@ -3234,6 +3264,10 @@ when defined(windows) or weirdTarget:
   type
     DeviceId* = int32
     FileId* = int64
+elif fileSystemMissing:
+  type
+    DeviceId* = int
+    FileId* = int
 else:
   type
     DeviceId* = Dev
@@ -3344,7 +3378,8 @@ proc getFileInfo*(handle: FileHandle): FileInfo {.noWeirdTarget.} =
   ## * `getFileInfo(path) proc <#getFileInfo,string>`_
 
   # Done: ID, Kind, Size, Permissions, Link Count
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     var rawInfo: BY_HANDLE_FILE_INFORMATION
     # We have to use the super special '_get_osfhandle' call (wrapped above)
     # To transform the C file descriptor to a native file handle.
@@ -3386,7 +3421,8 @@ proc getFileInfo*(path: string, followSymlink = true): FileInfo {.noWeirdTarget.
   ## See also:
   ## * `getFileInfo(handle) proc <#getFileInfo,FileHandle>`_
   ## * `getFileInfo(file) proc <#getFileInfo,File>`_
-  when defined(windows):
+  when fileSystemMissing: discard
+  elif defined(windows):
     var
       handle = openHandle(path, followSymlink)
       rawInfo: BY_HANDLE_FILE_INFORMATION
@@ -3484,7 +3520,8 @@ proc getCurrentProcessId*(): int {.noWeirdTarget.} =
 proc setLastModificationTime*(file: string, t: times.Time) {.noWeirdTarget.} =
   ## Sets the `file`'s last modification time. `OSError` is raised in case of
   ## an error.
-  when defined(posix):
+  when fileSystemMissing: discard
+  elif defined(posix):
     let unixt = posix.Time(t.toUnix)
     let micro = convert(Nanoseconds, Microseconds, t.nanosecond)
     var timevals = [Timeval(tv_sec: unixt, tv_usec: micro),
