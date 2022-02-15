@@ -176,7 +176,7 @@ elif defined(genode):
   proc nimGetProcAddr(lib: LibHandle, name: cstring): ProcAddr =
     raiseAssert("nimGetProcAddr not implemented")
 
-elif defined(nintendoswitch) or defined(freertos) or defined(zephyr) or defined(nuttx):
+elif defined(nintendoswitch) or defined(freertos) or defined(zephyr) or defined(nuttx) or defined(nimNoLibc):
   proc nimUnloadLibrary(lib: LibHandle) =
     writeToStdErr("nimUnLoadLibrary not implemented")
     writeToStdErr("\n")
