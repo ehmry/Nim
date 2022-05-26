@@ -21,9 +21,9 @@ when not defined(genode):
 
 type
   GenodeEnvObj {.importcpp: "Genode::Env", header: "<base/env.h>", pure.} = object
-  GenodeEnvPtr = ptr GenodeEnvObj
+  GenodeEnvPtr* = ptr GenodeEnvObj
 
 const runtimeEnvSym = "nim_runtime_env"
 
 when not defined(nimscript):
-  var runtimeEnv {.importcpp: runtimeEnvSym.}: GenodeEnvPtr
+  var runtimeEnv* {.importcpp: runtimeEnvSym.}: GenodeEnvPtr

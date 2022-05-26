@@ -62,6 +62,8 @@ elif defined(posix):
 
   proc toTime(ts: Timespec): times.Time {.inline.} =
     result = initTime(ts.tv_sec.int64, ts.tv_nsec.int)
+elif defined(genode):
+  import times
 else:
   {.error: "OS module not ported to your operating system!".}
 

@@ -252,6 +252,11 @@ elif defined(windows):
 
   proc localtime(a1: var CTime): ptr Tm {.importc, header: "<time.h>", sideEffect.}
 
+elif defined(genode):
+  # Genode without POSIX
+  import genode/rtc
+  var rtcConn = initRtcConnection(runtimeEnv, "times")
+
 type
   Month* = enum ## Represents a month. Note that the enum starts at `1`,
                 ## so `ord(month)` will give the month number in the
@@ -894,6 +899,9 @@ proc toWinTime*(t: Time): int64 =
   ## since `1601-01-01T00:00:00Z`).
   result = t.seconds * rateDiff + epochDiff + t.nanosecond div 100
 
+when defined(genode):
+  proc `+=`*(t: var Time, b: TimeInterval) {.tags: [], gcsafe.}
+
 proc getTime*(): Time {.tags: [TimeEffect], benign.} =
   ## Gets the current time as a `Time` with up to nanosecond resolution.
   when defined(js):
@@ -915,6 +923,16 @@ proc getTime*(): Time {.tags: [TimeEffect], benign.} =
     var f {.noinit.}: FILETIME
     getSystemTimeAsFileTime(f)
     result = fromWinTime(rdFileTime(f))
+  elif defined(genode):
+    var ts = rtcConn.timestamp()
+    result += TimeInterval(
+      microseconds: int ts.microsecond,
+      seconds: int ts.second,
+      minutes: int ts.minute,
+      hours: int ts.hour,
+      days: int ts.day,
+      months: int ts.month,
+      years: int ts.year)
 
 proc `-`*(a, b: Time): Duration {.operator, extern: "ntDiffTime".} =
   ## Computes the duration between two points in time.
@@ -1222,7 +1240,7 @@ when defined(js):
     result.time = adjTime + initDuration(seconds = result.utcOffset)
     result.isDst = false
 
-else:
+elif defined(posix):
   proc toAdjUnix(tm: Tm): int64 =
     let epochDay = toEpochDay(tm.tm_mday, (tm.tm_mon + 1).Month,
                               tm.tm_year.int + 1900)
@@ -1283,6 +1301,13 @@ else:
     result.time = initTime(utcUnix, adjTime.nanosecond)
     result.utcOffset = finalOffset
     result.isDst = dst
+
+elif defined(genode):
+  proc localZonedTimeFromTime(time: Time): ZonedTime {.benign.} =
+    result.time = time
+
+  proc localZonedTimeFromAdjTime(adjTime: Time): ZonedTime {.benign.} =
+    result.time = adjTime
 
 proc utcTzInfo(time: Time): ZonedTime =
   ZonedTime(utcOffset: 0, isDst: false, time: time)
@@ -1877,9 +1902,9 @@ proc parsePattern(input: string, pattern: FormatPattern, i: var int,
     else:
       result = false
   of yy:
-    # Assumes current century
+    # Assumes 21st century
     var year = takeInt(2..2)
-    var thisCen = now().year div 100
+    var thisCen = 20
     parsed.year = some(thisCen*100 + year)
     result = year > 0
   of yyyy:
@@ -2608,6 +2633,9 @@ proc epochTime*(): float {.tags: [TimeEffect].} =
     var secs = i64 div rateDiff
     var subsecs = i64 mod rateDiff
     result = toFloat(int(secs)) + toFloat(int(subsecs)) * 0.0000001
+  elif defined(genode):
+    var t = now().toTime
+    result = t.seconds.toBiggestFloat + t.nanosecond.toBiggestFloat * 0.000_000_000_1
   elif defined(js):
     result = newDate().getTime() / 1000
   else:
