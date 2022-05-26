@@ -1755,6 +1755,8 @@ proc isAdmin*: bool {.noWeirdTarget.} =
       if freeSid(administratorsGroup) != nil:
         raiseOSError(osLastError(), "failed to free SID for Administrators group")
 
+  elif defined(genode): # non-POSIX
+    discard
   else:
     result = geteuid() == 0
 
@@ -3238,11 +3240,15 @@ proc sleep*(milsecs: int) {.rtl, extern: "nos$1", tags: [TimeEffect], noWeirdTar
   ## Sleeps `milsecs` milliseconds.
   when defined(windows):
     winlean.sleep(int32(milsecs))
-  else:
+  elif defined(posix):
     var a, b: Timespec
     a.tv_sec = posix.Time(milsecs div 1000)
     a.tv_nsec = (milsecs mod 1000) * 1000 * 1000
     discard posix.nanosleep(a, b)
+  elif defined(genode):
+    raise newException(Defect, "blocking sleep not available on Genode")
+  else:
+    {.error: "sleep not ported to your operating system!".}
 
 proc getFileSize*(file: string): BiggestInt {.rtl, extern: "nos$1",
   tags: [ReadIOEffect], noWeirdTarget.} =
@@ -3266,14 +3272,14 @@ when defined(windows) or weirdTarget:
   type
     DeviceId* = int32
     FileId* = int64
-elif fileSystemMissing:
-  type
-    DeviceId* = int
-    FileId* = int
-else:
+elif defined(posix):
   type
     DeviceId* = Dev
     FileId* = Ino
+else:
+  type
+    DeviceId* = int
+    FileId* = int
 
 type
   FileInfo* = object
@@ -3516,6 +3522,8 @@ proc getCurrentProcessId*(): int {.noWeirdTarget.} =
     proc GetCurrentProcessId(): DWORD {.stdcall, dynlib: "kernel32",
                                         importc: "GetCurrentProcessId".}
     result = GetCurrentProcessId().int
+  elif defined(genode): # non-POSIX
+    discard
   else:
     result = getpid()
 
