@@ -213,7 +213,7 @@ type
 
 proc processTimers(
   p: PDispatcherBase, didSomeWork: var bool
-): Option[int] {.inline.} =
+): Option[Duration] {.inline.} =
   # Pop the timers in the order in which they will expire (smaller `finishAt`).
   var count = p.timers.len
   let t = getMonoTime()
@@ -222,11 +222,11 @@ proc processTimers(
     dec count
     didSomeWork = true
 
-  # Return the number of milliseconds in which the next timer will expire.
+  # Return the duration in which the next timer will expire.
   if p.timers.len == 0: return
 
-  let millisecs = (p.timers[0].finishAt - getMonoTime()).inMilliseconds
-  return some(millisecs.int + 1)
+  let timeout = p.timers[0].finishAt - getMonoTime()
+  return some(timeout)
 
 proc processPendingCallbacks(p: PDispatcherBase; didSomeWork: var bool) =
   while p.callbacks.len > 0:
@@ -235,16 +235,17 @@ proc processPendingCallbacks(p: PDispatcherBase; didSomeWork: var bool) =
     didSomeWork = true
 
 proc adjustTimeout(
-  p: PDispatcherBase, pollTimeout: int, nextTimer: Option[int]
-): int {.inline.} =
-  if p.callbacks.len != 0:
-    return 0
+  p: PDispatcherBase, pollTimeout: Duration, nextTimer: Option[Duration]
+): Duration {.inline.} =
+  if p.callbacks.len == 0:
+    if nextTimer.isNone() or pollTimeout < result:
+      return pollTimeout
 
-  if nextTimer.isNone() or pollTimeout == -1:
-    return pollTimeout
+    result = max(nextTimer.get(), Duration())
+    result = min(pollTimeout, result)
 
-  result = max(nextTimer.get(), 0)
-  result = min(pollTimeout, result)
+proc roundToMilliseconds(dur: Duration): int64 {.used.} =
+  inMilliseconds(dur + initDuration(microseconds = 500))
 
 proc callSoon*(cbproc: proc () {.gcsafe.}) {.gcsafe.}
   ## Schedule `cbproc` to be called as soon as possible.
@@ -355,7 +356,7 @@ when defined(windows) or defined(nimdoc):
     let p = getGlobalDispatcher()
     p.handles.len != 0 or p.timers.len != 0 or p.callbacks.len != 0
 
-  proc runOnce(timeout = 500): bool =
+  proc runOnce(timeout: Duration): bool =
     let p = getGlobalDispatcher()
     if p.handles.len == 0 and p.timers.len == 0 and p.callbacks.len == 0:
       raise newException(ValueError,
@@ -365,8 +366,8 @@ when defined(windows) or defined(nimdoc):
     let nextTimer = processTimers(p, result)
     let at = adjustTimeout(p, timeout, nextTimer)
     var llTimeout =
-      if at == -1: winlean.INFINITE
-      else: at.int32
+      if at < Duration(): winlean.INFINITE
+      else: at.roundToMilliseconds.int32
 
     var lpNumberOfBytesTransferred: DWORD
     var lpCompletionKey: ULONG_PTR
@@ -1337,7 +1338,7 @@ else:
         )
 
 
-  proc runOnce(timeout = 500): bool =
+  proc runOnce(timeout: Duration): bool =
     let p = getGlobalDispatcher()
     if p.selector.isEmpty() and p.timers.len == 0 and p.callbacks.len == 0:
       raise newException(ValueError,
@@ -1347,7 +1348,7 @@ else:
     var keys: array[64, ReadyKey]
     let nextTimer = processTimers(p, result)
     var count =
-      p.selector.selectInto(adjustTimeout(p, timeout, nextTimer), keys)
+      p.selector.selectInto(adjustTimeout(p, timeout, nextTimer).roundToMilliseconds.int, keys)
     for i in 0..<count:
       let fd = keys[i].fd.AsyncFD
       let events = keys[i].events
@@ -1634,7 +1635,7 @@ else:
     data.readList.add(cb)
     p.selector.registerEvent(SelectEvent(ev), data)
 
-proc drain*(timeout = 500) =
+proc drain*(timeout: Duration) =
   ## Waits for completion of **all** events and processes them. Raises `ValueError`
   ## if there are no pending operations. In contrast to `poll` this
   ## processes as many events as are available until the timeout has elapsed.
@@ -1642,15 +1643,19 @@ proc drain*(timeout = 500) =
   let start = now()
   while hasPendingOperations():
     discard runOnce(curTimeout)
-    curTimeout -= (now() - start).inMilliseconds.int
-    if curTimeout < 0:
+    curTimeout -= now() - start
+    if curTimeout < Duration():
       break
 
-proc poll*(timeout = 500) =
+proc drain*(timeoutMs = 500) {.inline.} = drain(initDuration(milliseconds = timeoutMs))
+
+proc poll*(timeout: Duration) =
   ## Waits for completion events and processes them. Raises `ValueError`
   ## if there are no pending operations. This runs the underlying OS
   ## `epoll`:idx: or `kqueue`:idx: primitive only once.
   discard runOnce(timeout)
+
+proc poll*(timeoutMs = 500) {.inline.} = poll(initDuration(milliseconds = timeoutMs))
 
 template createAsyncNativeSocketImpl(domain, sockType, protocol: untyped,
                                      inheritable = defined(nimInheritHandles)) =
@@ -1856,19 +1861,24 @@ proc connect*(socket: AsyncFD, address: string, port: Port,
     socket.SocketHandle.bindToDomain(domain)
   asyncAddrInfoLoop(aiList, socket)
 
-proc sleepAsync*(ms: int | float): owned(Future[void]) =
-  ## Suspends the execution of the current async procedure for the next
-  ## `ms` milliseconds.
+proc sleepAsync*(timeout: Duration): owned(Future[void]) =
+  ## Suspends the execution of the current async procedure for the given
+  ## duration.
   var retFuture = newFuture[void]("sleepAsync")
   let p = getGlobalDispatcher()
-  when ms is int:
-    p.timers.push((getMonoTime() + initDuration(milliseconds = ms), retFuture))
-  elif ms is float:
-    let ns = (ms * 1_000_000).int64
-    p.timers.push((getMonoTime() + initDuration(nanoseconds = ns), retFuture))
+  let deadline: Monotime = getMonoTime() + timeout
+  p.timers.push((deadline, retFuture))
   return retFuture
 
-proc withTimeout*[T](fut: Future[T], timeout: int): owned(Future[bool]) =
+proc sleepAsync*(ms: int | float): owned(Future[void]) {.inline.} =
+  ## Suspends the execution of the current async procedure for the next
+  ## `ms` milliseconds.
+  when ms is int:
+    sleepAsync(initDuration(milliseconds = ms))
+  elif ms is float:
+    sleepAsync(initDuration(nanoseconds = (ms * 1_000_000).int64))
+
+proc withTimeout*[T](fut: Future[T], timeoutMs: int): owned(Future[bool]) =
   ## Returns a future which will complete once `fut` completes or after
   ## `timeout` milliseconds has elapsed.
   ##
@@ -1877,7 +1887,7 @@ proc withTimeout*[T](fut: Future[T], timeout: int): owned(Future[bool]) =
   ## future will hold false.
 
   var retFuture = newFuture[bool]("asyncdispatch.`withTimeout`")
-  var timeoutFuture = sleepAsync(timeout)
+  var timeoutFuture = sleepAsync(initDuration(milliseconds = timeoutMs))
   fut.callback =
     proc () =
       if not retFuture.finished:
