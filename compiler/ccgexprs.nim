@@ -1155,7 +1155,7 @@ proc genEcho(p: BProc, n: PNode) =
   # this unusual way of implementing it ensures that e.g. ``echo("hallo", 45)``
   # is threadsafe.
   internalAssert p.config, n.kind == nkBracket
-  if p.config.target.targetOS == osGenode:
+  if p.config.target.targetOS == osGenode and not p.config.isDefined("posix"):
     # echo directly to the Genode LOG session
     var args: Rope = nil
     var a: TLoc
