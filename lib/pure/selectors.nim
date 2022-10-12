@@ -350,6 +350,7 @@ elif not defined(nimNoLibc):
   elif defined(solaris):
     include ioselects/ioselectors_poll # need to replace it with event ports
   elif defined(genode):
+    when not defined(posix): {.error: "do not import this module without POSIX support".}
     include ioselects/ioselectors_select # TODO: use the native VFS layer
   elif defined(nintendoswitch):
     include ioselects/ioselectors_select
