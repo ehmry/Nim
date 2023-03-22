@@ -1447,7 +1447,7 @@ proc writeOutput*(d: PDoc, useWarning = false, groupedToc = false) =
     except IOError:
       rawMessage(d.conf, if useWarning: warnCannotOpenFile else: errCannotOpenFile,
         outfile.string)
-    if not d.wroteSupportFiles: # nimdoc.css + dochack.js
+    if not d.wroteSupportFiles and false: # nimdoc.css + dochack.js
       let nimr = $d.conf.getPrefixDir()
       copyFile(docCss.interp(nimr = nimr), $d.conf.outDir / nimdocOutCss)
       if optGenIndex in d.conf.globalOptions:
