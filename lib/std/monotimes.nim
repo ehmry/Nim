@@ -87,7 +87,7 @@ elif defined(windows):
     importc: "QueryPerformanceFrequency", stdcall, dynlib: "kernel32".}
 
 elif defined(solo5):
-  import solo5
+  import solo5/base
 
 proc getMonoTime*(): MonoTime {.tags: [TimeEffect].} =
   ## Returns the current `MonoTime` timestamp.

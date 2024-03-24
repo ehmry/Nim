@@ -236,7 +236,7 @@ when defined(js):
   {.pop.}
 
 elif defined(solo5):
-  import solo5
+  import solo5/base
 
 elif defined(posix):
   import posix
