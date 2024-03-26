@@ -1039,13 +1039,14 @@ else:
     ## field but kept as raw numbers via `JString`.
     result = parseJson(newStringStream(buffer), "input", rawIntegers, rawFloats)
 
-  proc parseFile*(filename: string): JsonNode =
-    ## Parses `file` into a `JsonNode`.
-    ## If `file` contains extra data, it will raise `JsonParsingError`.
-    var stream = newFileStream(filename, fmRead)
-    if stream == nil:
-      raise newException(IOError, "cannot read from file: " & filename)
-    result = parseJson(stream, filename, rawIntegers=false, rawFloats=false)
+  when not defined(nimNoLibc):
+    proc parseFile*(filename: string): JsonNode =
+      ## Parses `file` into a `JsonNode`.
+      ## If `file` contains extra data, it will raise `JsonParsingError`.
+      var stream = newFileStream(filename, fmRead)
+      if stream == nil:
+        raise newException(IOError, "cannot read from file: " & filename)
+      result = parseJson(stream, filename, rawIntegers=false, rawFloats=false)
 
 # -- Json deserialiser. --
 
