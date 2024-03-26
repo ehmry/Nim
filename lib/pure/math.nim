@@ -237,6 +237,14 @@ proc signbit*(x: SomeFloat): bool {.inline, since: (1, 5, 1).} =
   when defined(js):
     let uintBuffer = toBitsImpl(x)
     result = (uintBuffer[1] shr 31) != 0
+  elif defined(nimNoLibc):
+    when x is float64:
+      var bits: uint64
+      littleEndian64(addr bits, addr x)
+    elif x is float32:
+      var bits: uint32
+      littleEndian32(addr bits, addr x)
+    result = (bits and 1) == 1
   else:
     result = c_signbit(x) != 0
 
