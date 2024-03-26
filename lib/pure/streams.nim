@@ -1311,226 +1311,227 @@ else: # after 1.3 or JS not defined
       result.peekDataImpl = ssPeekData
       result.writeDataImpl = ssWriteData
 
-type
-  FileStream* = ref FileStreamObj
-    ## A stream that encapsulates a `File`.
+when defined(File):
+  type
+    FileStream* = ref FileStreamObj
+      ## A stream that encapsulates a `File`.
+      ##
+      ## **Note:** Not available for JS backend.
+    FileStreamObj* = object of Stream
+      ## A file stream object.
+      ##
+      ## **Note:** Not available for JS backend.
+      f: File
+
+  proc fsClose(s: Stream) =
+    if FileStream(s).f != nil:
+      close(FileStream(s).f)
+      FileStream(s).f = nil
+  proc fsFlush(s: Stream) = flushFile(FileStream(s).f)
+  proc fsAtEnd(s: Stream): bool = return endOfFile(FileStream(s).f)
+  proc fsSetPosition(s: Stream, pos: int) = setFilePos(FileStream(s).f, pos)
+  proc fsGetPosition(s: Stream): int = return int(getFilePos(FileStream(s).f))
+
+  proc fsReadData(s: Stream, buffer: pointer, bufLen: int): int =
+    result = readBuffer(FileStream(s).f, buffer, bufLen)
+
+  proc fsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
+    result = readBuffer(FileStream(s).f, addr buffer[slice.a], slice.b + 1 - slice.a)
+
+  proc fsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
+    let pos = fsGetPosition(s)
+    defer: fsSetPosition(s, pos)
+    result = readBuffer(FileStream(s).f, buffer, bufLen)
+
+  proc fsWriteData(s: Stream, buffer: pointer, bufLen: int) =
+    if writeBuffer(FileStream(s).f, buffer, bufLen) != bufLen:
+      raise newEIO("cannot write to stream")
+
+  proc fsReadLine(s: Stream, line: var string): bool =
+    result = readLine(FileStream(s).f, line)
+
+  proc newFileStream*(f: File): owned FileStream =
+    ## Creates a new stream from the file `f`.
     ##
     ## **Note:** Not available for JS backend.
-  FileStreamObj* = object of Stream
-    ## A file stream object.
     ##
-    ## **Note:** Not available for JS backend.
-    f: File
-
-proc fsClose(s: Stream) =
-  if FileStream(s).f != nil:
-    close(FileStream(s).f)
-    FileStream(s).f = nil
-proc fsFlush(s: Stream) = flushFile(FileStream(s).f)
-proc fsAtEnd(s: Stream): bool = return endOfFile(FileStream(s).f)
-proc fsSetPosition(s: Stream, pos: int) = setFilePos(FileStream(s).f, pos)
-proc fsGetPosition(s: Stream): int = return int(getFilePos(FileStream(s).f))
-
-proc fsReadData(s: Stream, buffer: pointer, bufLen: int): int =
-  result = readBuffer(FileStream(s).f, buffer, bufLen)
-
-proc fsReadDataStr(s: Stream, buffer: var string, slice: Slice[int]): int =
-  result = readBuffer(FileStream(s).f, addr buffer[slice.a], slice.b + 1 - slice.a)
-
-proc fsPeekData(s: Stream, buffer: pointer, bufLen: int): int =
-  let pos = fsGetPosition(s)
-  defer: fsSetPosition(s, pos)
-  result = readBuffer(FileStream(s).f, buffer, bufLen)
-
-proc fsWriteData(s: Stream, buffer: pointer, bufLen: int) =
-  if writeBuffer(FileStream(s).f, buffer, bufLen) != bufLen:
-    raise newEIO("cannot write to stream")
-
-proc fsReadLine(s: Stream, line: var string): bool =
-  result = readLine(FileStream(s).f, line)
-
-proc newFileStream*(f: File): owned FileStream =
-  ## Creates a new stream from the file `f`.
-  ##
-  ## **Note:** Not available for JS backend.
-  ##
-  ## See also:
-  ## * `newStringStream proc <#newStringStream,string>`_ creates a new stream
-  ##   from string.
-  ## * `newFileStream proc <#newFileStream,string,FileMode,int>`_ is the same
-  ##   as using `open proc <syncio.html#open,File,string,FileMode,int>`_
-  ##   on Examples.
-  ## * `openFileStream proc <#openFileStream,string,FileMode,int>`_ creates a
-  ##   file stream from the file name and the mode.
-  runnableExamples:
-    ## Input (somefile.txt):
-    ## The first line
-    ## the second line
-    ## the third line
-    var f: File
-    if open(f, "somefile.txt", fmRead, -1):
-      var strm = newFileStream(f)
-      var line = ""
-      while strm.readLine(line):
-        echo line
-      ## Output:
-      ## The first line
-      ## the second line
-      ## the third line
-      strm.close()
-
-  new(result)
-  result.f = f
-  result.closeImpl = fsClose
-  result.atEndImpl = fsAtEnd
-  result.setPositionImpl = fsSetPosition
-  result.getPositionImpl = fsGetPosition
-  result.readDataStrImpl = fsReadDataStr
-  result.readDataImpl = fsReadData
-  result.readLineImpl = fsReadLine
-  result.peekDataImpl = fsPeekData
-  result.writeDataImpl = fsWriteData
-  result.flushImpl = fsFlush
-
-proc newFileStream*(filename: string, mode: FileMode = fmRead,
-    bufSize: int = -1): owned FileStream =
-  ## Creates a new stream from the file named `filename` with the mode `mode`.
-  ##
-  ## If the file cannot be opened, `nil` is returned. See the `io module
-  ## <syncio.html>`_ for a list of available `FileMode enums <syncio.html#FileMode>`_.
-  ##
-  ## **Note:**
-  ## * **This function returns nil in case of failure.**
-  ##   To prevent unexpected behavior and ensure proper error handling,
-  ##   use `openFileStream proc <#openFileStream,string,FileMode,int>`_
-  ##   instead.
-  ## * Not available for JS backend.
-  ##
-  ## See also:
-  ## * `newStringStream proc <#newStringStream,string>`_ creates a new stream
-  ##   from string.
-  ## * `newFileStream proc <#newFileStream,File>`_ creates a file stream from
-  ##   opened File.
-  ## * `openFileStream proc <#openFileStream,string,FileMode,int>`_ creates a
-  ##   file stream from the file name and the mode.
-  runnableExamples:
-    from std/os import removeFile
-    var strm = newFileStream("somefile.txt", fmWrite)
-    if not isNil(strm):
-      strm.writeLine("The first line")
-      strm.writeLine("the second line")
-      strm.writeLine("the third line")
-      strm.close()
-      ## Output (somefile.txt)
-      ## The first line
-      ## the second line
-      ## the third line
-      removeFile("somefile.txt")
-
-  var f: File
-  if open(f, filename, mode, bufSize): result = newFileStream(f)
-
-proc openFileStream*(filename: string, mode: FileMode = fmRead,
-    bufSize: int = -1): owned FileStream =
-  ## Creates a new stream from the file named `filename` with the mode `mode`.
-  ## If the file cannot be opened, an IO exception is raised.
-  ##
-  ## **Note:** Not available for JS backend.
-  ##
-  ## See also:
-  ## * `newStringStream proc <#newStringStream,string>`_ creates a new stream
-  ##   from string.
-  ## * `newFileStream proc <#newFileStream,File>`_ creates a file stream from
-  ##   opened File.
-  ## * `newFileStream proc <#newFileStream,string,FileMode,int>`_  creates a
-  ##   file stream from the file name and the mode.
-  runnableExamples:
-    try:
+    ## See also:
+    ## * `newStringStream proc <#newStringStream,string>`_ creates a new stream
+    ##   from string.
+    ## * `newFileStream proc <#newFileStream,string,FileMode,int>`_ is the same
+    ##   as using `open proc <syncio.html#open,File,string,FileMode,int>`_
+    ##   on Examples.
+    ## * `openFileStream proc <#openFileStream,string,FileMode,int>`_ creates a
+    ##   file stream from the file name and the mode.
+    runnableExamples:
       ## Input (somefile.txt):
       ## The first line
       ## the second line
       ## the third line
-      var strm = openFileStream("somefile.txt")
-      echo strm.readLine()
-      ## Output:
-      ## The first line
-      strm.close()
-    except:
-      stderr.write getCurrentExceptionMsg()
+      var f: File
+      if open(f, "somefile.txt", fmRead, -1):
+        var strm = newFileStream(f)
+        var line = ""
+        while strm.readLine(line):
+          echo line
+        ## Output:
+        ## The first line
+        ## the second line
+        ## the third line
+        strm.close()
 
-  var f: File
-  if open(f, filename, mode, bufSize):
-    return newFileStream(f)
-  else:
-    raise newEIO("cannot open file stream: " & filename)
-
-when false:
-  type
-    FileHandleStream* = ref FileHandleStreamObj
-    FileHandleStreamObj* = object of Stream
-      handle*: FileHandle
-      pos: int
-
-  proc newEOS(msg: string): ref OSError =
     new(result)
-    result.msg = msg
+    result.f = f
+    result.closeImpl = fsClose
+    result.atEndImpl = fsAtEnd
+    result.setPositionImpl = fsSetPosition
+    result.getPositionImpl = fsGetPosition
+    result.readDataStrImpl = fsReadDataStr
+    result.readDataImpl = fsReadData
+    result.readLineImpl = fsReadLine
+    result.peekDataImpl = fsPeekData
+    result.writeDataImpl = fsWriteData
+    result.flushImpl = fsFlush
 
-  proc hsGetPosition(s: FileHandleStream): int =
-    return s.pos
+  proc newFileStream*(filename: string, mode: FileMode = fmRead,
+      bufSize: int = -1): owned FileStream =
+    ## Creates a new stream from the file named `filename` with the mode `mode`.
+    ##
+    ## If the file cannot be opened, `nil` is returned. See the `io module
+    ## <syncio.html>`_ for a list of available `FileMode enums <syncio.html#FileMode>`_.
+    ##
+    ## **Note:**
+    ## * **This function returns nil in case of failure.**
+    ##   To prevent unexpected behavior and ensure proper error handling,
+    ##   use `openFileStream proc <#openFileStream,string,FileMode,int>`_
+    ##   instead.
+    ## * Not available for JS backend.
+    ##
+    ## See also:
+    ## * `newStringStream proc <#newStringStream,string>`_ creates a new stream
+    ##   from string.
+    ## * `newFileStream proc <#newFileStream,File>`_ creates a file stream from
+    ##   opened File.
+    ## * `openFileStream proc <#openFileStream,string,FileMode,int>`_ creates a
+    ##   file stream from the file name and the mode.
+    runnableExamples:
+      from std/os import removeFile
+      var strm = newFileStream("somefile.txt", fmWrite)
+      if not isNil(strm):
+        strm.writeLine("The first line")
+        strm.writeLine("the second line")
+        strm.writeLine("the third line")
+        strm.close()
+        ## Output (somefile.txt)
+        ## The first line
+        ## the second line
+        ## the third line
+        removeFile("somefile.txt")
 
-  when defined(windows):
-    # do not import windows as this increases compile times:
-    discard
-  elif defined(posix):
-    import posix
+    var f: File
+    if open(f, filename, mode, bufSize): result = newFileStream(f)
 
-    proc hsSetPosition(s: FileHandleStream, pos: int) =
-      discard lseek(s.handle, pos, SEEK_SET)
+  proc openFileStream*(filename: string, mode: FileMode = fmRead,
+      bufSize: int = -1): owned FileStream =
+    ## Creates a new stream from the file named `filename` with the mode `mode`.
+    ## If the file cannot be opened, an IO exception is raised.
+    ##
+    ## **Note:** Not available for JS backend.
+    ##
+    ## See also:
+    ## * `newStringStream proc <#newStringStream,string>`_ creates a new stream
+    ##   from string.
+    ## * `newFileStream proc <#newFileStream,File>`_ creates a file stream from
+    ##   opened File.
+    ## * `newFileStream proc <#newFileStream,string,FileMode,int>`_  creates a
+    ##   file stream from the file name and the mode.
+    runnableExamples:
+      try:
+        ## Input (somefile.txt):
+        ## The first line
+        ## the second line
+        ## the third line
+        var strm = openFileStream("somefile.txt")
+        echo strm.readLine()
+        ## Output:
+        ## The first line
+        strm.close()
+      except:
+        stderr.write getCurrentExceptionMsg()
 
-    proc hsClose(s: FileHandleStream) = discard close(s.handle)
-    proc hsAtEnd(s: FileHandleStream): bool =
-      var pos = hsGetPosition(s)
-      var theEnd = lseek(s.handle, 0, SEEK_END)
-      result = pos >= theEnd
-      hsSetPosition(s, pos) # set position back
-
-    proc hsReadData(s: FileHandleStream, buffer: pointer, bufLen: int): int =
-      result = posix.read(s.handle, buffer, bufLen)
-      inc(s.pos, result)
-
-    proc hsPeekData(s: FileHandleStream, buffer: pointer, bufLen: int): int =
-      result = posix.read(s.handle, buffer, bufLen)
-
-    proc hsWriteData(s: FileHandleStream, buffer: pointer, bufLen: int) =
-      if posix.write(s.handle, buffer, bufLen) != bufLen:
-        raise newEIO("cannot write to stream")
-      inc(s.pos, bufLen)
-
-  proc newFileHandleStream*(handle: FileHandle): owned FileHandleStream =
-    new(result)
-    result.handle = handle
-    result.pos = 0
-    result.close = hsClose
-    result.atEnd = hsAtEnd
-    result.setPosition = hsSetPosition
-    result.getPosition = hsGetPosition
-    result.readData = hsReadData
-    result.peekData = hsPeekData
-    result.writeData = hsWriteData
-
-  proc newFileHandleStream*(filename: string,
-                            mode: FileMode): owned FileHandleStream =
-    when defined(windows):
-      discard
+    var f: File
+    if open(f, filename, mode, bufSize):
+      return newFileStream(f)
     else:
-      var flags: cint
-      case mode
-      of fmRead: flags = posix.O_RDONLY
-      of fmWrite: flags = O_WRONLY or int(O_CREAT)
-      of fmReadWrite: flags = O_RDWR or int(O_CREAT)
-      of fmReadWriteExisting: flags = O_RDWR
-      of fmAppend: flags = O_WRONLY or int(O_CREAT) or O_APPEND
-      static: doAssert false # handle bug #17888
-      var handle = open(filename, flags)
-      if handle < 0: raise newEOS("posix.open() call failed")
-    result = newFileHandleStream(handle)
+      raise newEIO("cannot open file stream: " & filename)
+
+  when false:
+    type
+      FileHandleStream* = ref FileHandleStreamObj
+      FileHandleStreamObj* = object of Stream
+        handle*: FileHandle
+        pos: int
+
+    proc newEOS(msg: string): ref OSError =
+      new(result)
+      result.msg = msg
+
+    proc hsGetPosition(s: FileHandleStream): int =
+      return s.pos
+
+    when defined(windows):
+      # do not import windows as this increases compile times:
+      discard
+    elif defined(posix):
+      import posix
+
+      proc hsSetPosition(s: FileHandleStream, pos: int) =
+        discard lseek(s.handle, pos, SEEK_SET)
+
+      proc hsClose(s: FileHandleStream) = discard close(s.handle)
+      proc hsAtEnd(s: FileHandleStream): bool =
+        var pos = hsGetPosition(s)
+        var theEnd = lseek(s.handle, 0, SEEK_END)
+        result = pos >= theEnd
+        hsSetPosition(s, pos) # set position back
+
+      proc hsReadData(s: FileHandleStream, buffer: pointer, bufLen: int): int =
+        result = posix.read(s.handle, buffer, bufLen)
+        inc(s.pos, result)
+
+      proc hsPeekData(s: FileHandleStream, buffer: pointer, bufLen: int): int =
+        result = posix.read(s.handle, buffer, bufLen)
+
+      proc hsWriteData(s: FileHandleStream, buffer: pointer, bufLen: int) =
+        if posix.write(s.handle, buffer, bufLen) != bufLen:
+          raise newEIO("cannot write to stream")
+        inc(s.pos, bufLen)
+
+    proc newFileHandleStream*(handle: FileHandle): owned FileHandleStream =
+      new(result)
+      result.handle = handle
+      result.pos = 0
+      result.close = hsClose
+      result.atEnd = hsAtEnd
+      result.setPosition = hsSetPosition
+      result.getPosition = hsGetPosition
+      result.readData = hsReadData
+      result.peekData = hsPeekData
+      result.writeData = hsWriteData
+
+    proc newFileHandleStream*(filename: string,
+                              mode: FileMode): owned FileHandleStream =
+      when defined(windows):
+        discard
+      else:
+        var flags: cint
+        case mode
+        of fmRead: flags = posix.O_RDONLY
+        of fmWrite: flags = O_WRONLY or int(O_CREAT)
+        of fmReadWrite: flags = O_RDWR or int(O_CREAT)
+        of fmReadWriteExisting: flags = O_RDWR
+        of fmAppend: flags = O_WRONLY or int(O_CREAT) or O_APPEND
+        static: doAssert false # handle bug #17888
+        var handle = open(filename, flags)
+        if handle < 0: raise newEOS("posix.open() call failed")
+      result = newFileHandleStream(handle)
