@@ -2578,11 +2578,21 @@ proc procCall*(x: untyped) {.magic: "ProcCall", compileTime.} =
 proc `==`*(x, y: cstring): bool {.magic: "EqCString", noSideEffect,
                                    inline.} =
   ## Checks for equality between two `cstring` variables.
-  proc strcmp(a, b: cstring): cint {.noSideEffect,
-    importc, header: "<string.h>".}
   if pointer(x) == pointer(y): result = true
   elif x.isNil or y.isNil: result = false
-  else: result = strcmp(x, y) == 0
+  else:
+    when defined(nimNoLibc):
+      var
+        a = cast[ptr UncheckedArray[char]](x)
+        b = cast[ptr UncheckedArray[char]](y)
+        i = 0
+      while a[i] == b[i] and a[i] != '\0':
+        inc i
+      result = a[i] == b[i]
+    else:
+      proc strcmp(a, b: cstring): cint {.noSideEffect,
+        importc, header: "<string.h>".}
+      result = strcmp(x, y) == 0
 
 template closureScope*(body: untyped): untyped =
   ## Useful when creating a closure in a loop to capture local loop variables by
