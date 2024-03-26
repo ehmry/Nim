@@ -2794,7 +2794,7 @@ when notJSnotNims:
       when defined(windows) and compileOption("threads"):
         releaseSys echoLock
 
-when not defined(nimPreviewSlimSystem):
+when not defined(nimPreviewSlimSystem) and not defined(solo5):
   import std/syncio
   export syncio
 
