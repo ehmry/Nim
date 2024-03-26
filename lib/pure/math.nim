@@ -197,11 +197,10 @@ func isNaN*(x: SomeFloat): bool {.inline, since: (1,5,1).} =
     doAssert not Inf.isNaN
     doAssert not isNaN(3.1415926)
 
-  template fn: untyped = result = x != x
-  when nimvm: fn()
+  when nimvm or defined(js) or defined(nimNoLibc):
+    result = x != x
   else:
-    when defined(js): fn()
-    else: result = c_isnan(x)
+    result = c_isnan(x)
 
 when defined(js):
   import std/private/jsutils
