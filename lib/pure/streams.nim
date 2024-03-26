@@ -1311,7 +1311,7 @@ else: # after 1.3 or JS not defined
       result.peekDataImpl = ssPeekData
       result.writeDataImpl = ssWriteData
 
-when defined(File):
+when not defined(nimNoLibc):
   type
     FileStream* = ref FileStreamObj
       ## A stream that encapsulates a `File`.
